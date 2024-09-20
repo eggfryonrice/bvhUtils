@@ -3,6 +3,8 @@ venv/
 .vscode/
 .DS_Store
 tempCodeRunnerFile.py
+*.bvh
+!example.bvh
 
 # below is basic python .gitignore file
 # ----------------------------------------------------------------
