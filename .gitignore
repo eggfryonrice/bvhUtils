@@ -1,3 +1,12 @@
+# ignore venv
+venv/
+.vscode/
+.DS_Store
+tempCodeRunnerFile.py
+
+# below is basic python .gitignore file
+# ----------------------------------------------------------------
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
