@@ -131,7 +131,7 @@ class MPQueue(Generic[T]):
         self.queue = multiprocessing.Queue()
         self.size = multiprocessing.Value("i", 0)
 
-    def put(self, item: T):
+    def put(self, item: T) -> None:
         self.queue.put(item)
         with self.size.get_lock():
             self.size.value += 1
@@ -148,6 +148,6 @@ class MPQueue(Generic[T]):
     def empty(self) -> bool:
         return self.qsize() == 0
 
-    def clear(self):
+    def clear(self) -> None:
         while self.qsize() > 0:
             self.get()

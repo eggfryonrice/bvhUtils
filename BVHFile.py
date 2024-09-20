@@ -44,7 +44,7 @@ class BVHFile:
         self.currentFrame: int = 0
 
         # dict from name to channel
-        self.nameToJoint: dict = {}
+        self.nameToJoint: dict[str, Joint] = {}
 
         # parse bvh file by the first element of each line
         with open(fileName, "r") as f:
@@ -53,7 +53,7 @@ class BVHFile:
 
             # parse the upper part of bvh file
             for l in f:
-                tokens = l.strip().split()
+                tokens: list[str] = l.strip().split()
                 if not tokens:
                     continue
 
@@ -162,7 +162,7 @@ class BVHFile:
     # calcualte position of all joints using data of given frame
     def calculateJointsPositionByFrame(
         self, frame: int, rootTransformation: NDArray[np.float64] = np.eye(4)
-    ):
+    ) -> None:
         frame = frame % self.numFrames
         data = self.datas[frame]
         for joint in self.joints:
@@ -171,7 +171,7 @@ class BVHFile:
     # calcualte position of all joints by given data
     def calculateJointsPositionFromData(
         self, data: list[float], rootTransformation: NDArray[np.float64] = np.eye(4)
-    ):
+    ) -> None:
         for joint in self.joints:
             self.calculateJointPosition(joint, data, rootTransformation)
 

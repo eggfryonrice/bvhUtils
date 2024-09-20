@@ -43,13 +43,13 @@ class pygameScene:
         self.frameTime: float = frameTime
 
     # setup non-serializable data (pygame attributes) later for multiprocessing
-    def setupPygame(self):
+    def setupPygame(self) -> None:
         pygame.init()
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption(self.caption)
         self.clock = pygame.time.Clock()
 
-    def updateCameraCenter(self, joints):
+    def updateCameraCenter(self, joints) -> None:
         if len(joints) == 0:
             return
         self.cameraCenter = joints[0][0:3] / joints[0][3]
@@ -58,7 +58,7 @@ class pygameScene:
                 self.cameraCenter[1] = joint[1] / joint[3]
 
     # get projected location on the screen of 4d point
-    def projection(self, point: NDArray[np.float64]):
+    def projection(self, point: NDArray[np.float64]) -> tuple[int, int]:
 
         cameraDistance = self.cameraDistance
         rotationAngle = self.rotationAngle
@@ -78,7 +78,7 @@ class pygameScene:
         return int(x2d), int(y2d)
 
     # handle input such as pushing x button, mouse motion, left button, and scroll
-    def handleInput(self):
+    def handleInput(self) -> None:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 with self.running.get_lock():
@@ -124,7 +124,7 @@ class pygameScene:
         point: NDArray[np.float64],
         color: tuple[int, int, int] = (255, 255, 255),
         size: int = 4,
-    ):
+    ) -> None:
         pygame.draw.circle(self.screen, color, self.projection(point), size)
 
     # draw line through series of homogeneous points
@@ -133,7 +133,7 @@ class pygameScene:
         points: list[NDArray[np.float64]],
         color: tuple[int, int, int] = (255, 255, 255),
         width: int = 2,
-    ):
+    ) -> None:
         if len(points) <= 1:
             return
         fromPt = self.projection(points[0])
@@ -149,7 +149,7 @@ class pygameScene:
         color: tuple[int, int, int] = (100, 100, 100),
         grid: int = 21,
         gridDistance: int = 50,
-    ):
+    ) -> None:
         centerX = self.cameraCenter[0]
         centerZ = self.cameraCenter[2]
 
@@ -177,7 +177,7 @@ class pygameScene:
             pygame.draw.aaline(self.screen, color, floorPoints[i], floorPoints[j])
 
     # draw elapsed time on top right
-    def drawElapsedTimeAndFrame(self, frame: int):
+    def drawElapsedTimeAndFrame(self, frame: int) -> None:
         font = pygame.font.Font(None, 36)
         elapsedSurface = font.render(
             f"Time: {frame * self.frameTime:.2f}s, Frame: {frame}",
@@ -189,7 +189,7 @@ class pygameScene:
         )
         self.screen.blit(elapsedSurface, elapsedRect)
 
-    def drawPendingIcon(self, radius: float = 50, frequency: float = 0.5):
+    def drawPendingIcon(self, radius: float = 50, frequency: float = 0.5) -> None:
         center = (self.screen.get_rect().width / 2, self.screen.get_rect().height / 2)
         pygame.draw.circle(self.screen, (255, 255, 255), center, radius, 2)
         angle = pygame.time.get_ticks() * frequency / 1000 * 360
@@ -205,7 +205,7 @@ class pygameScene:
         queue: Queue[
             tuple[int, list[NDArray[np.float64]], list[list[NDArray[np.float64]]]]
         ],
-    ):
+    ) -> None:
         self.setupPygame()
         while self.running.value and queue.empty():
             self.clock.tick(1 / self.frameTime)
@@ -243,7 +243,7 @@ class pygameScene:
         f: Callable[
             [], tuple[int, list[NDArray[np.float64]], list[list[NDArray[np.float64]]]]
         ],
-    ):
+    ) -> None:
         while self.running.value:
             if queue.qsize() > 5 / self.frameTime:
                 time.sleep(0.5)
@@ -270,7 +270,9 @@ class pygameScene:
         p2.join()
 
 
-def exampleFunction():
+def exampleFunction() -> (
+    tuple[int, list[NDArray[np.float64]], list[list[NDArray[np.float64]]]]
+):
     return (0, [], [])
 
 
