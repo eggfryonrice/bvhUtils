@@ -133,12 +133,14 @@ def defineRotationsFromEulers(
     matrices = np.eye(4).reshape(1, 4, 4).repeat(eulerAngles.shape[0], axis=0)
 
     for i, letter in enumerate(order):
-        if letter == "x":
-            matrices = matrices @ defineRotationXs(eulerAngles[:, i])
-        elif letter == "y":
-            matrices = matrices @ defineRotationYs(eulerAngles[:, i])
-        elif letter == "z":
-            matrices = matrices @ defineRotationZs(eulerAngles[:, i])
+        rotation_func = {
+            "x": defineRotationXs,
+            "y": defineRotationYs,
+            "z": defineRotationZs,
+        }[letter]
+        matrices = np.einsum(
+            "...ij,...jk->...ik", matrices, rotation_func(eulerAngles[:, i])
+        )
 
     return matrices
 
