@@ -86,6 +86,63 @@ def defineRotationZ3D(theta: float) -> NDArray[np.float64]:
     return mtx
 
 
+def defineRotationXs(angles: NDArray[np.float64]) -> NDArray[np.float64]:
+    cos = np.cos(angles)
+    sin = np.sin(angles)
+    rotation_x = np.zeros((angles.shape[0], 4, 4))
+    rotation_x[:, 0, 0] = 1
+    rotation_x[:, 1, 1] = cos
+    rotation_x[:, 1, 2] = -sin
+    rotation_x[:, 2, 1] = sin
+    rotation_x[:, 2, 2] = cos
+    rotation_x[:, 3, 3] = 1
+    return rotation_x
+
+
+def defineRotationYs(angles: NDArray[np.float64]) -> NDArray[np.float64]:
+    cos = np.cos(angles)
+    sin = np.sin(angles)
+    # Build the Y rotation matrices in a batched manner
+    rotation_y = np.zeros((angles.shape[0], 4, 4))
+    rotation_y[:, 0, 0] = cos
+    rotation_y[:, 0, 2] = sin
+    rotation_y[:, 1, 1] = 1
+    rotation_y[:, 2, 0] = -sin
+    rotation_y[:, 2, 2] = cos
+    rotation_y[:, 3, 3] = 1
+    return rotation_y
+
+
+def defineRotationZs(angles: NDArray[np.float64]) -> NDArray[np.float64]:
+    cos = np.cos(angles)
+    sin = np.sin(angles)
+    # Build the Z rotation matrices in a batched manner
+    rotation_z = np.zeros((angles.shape[0], 4, 4))
+    rotation_z[:, 0, 0] = cos
+    rotation_z[:, 0, 1] = -sin
+    rotation_z[:, 1, 0] = sin
+    rotation_z[:, 1, 1] = cos
+    rotation_z[:, 2, 2] = 1
+    rotation_z[:, 3, 3] = 1
+    return rotation_z
+
+
+def defineRotationsFromEulers(
+    eulerAngles: NDArray[np.float64], order: str = "zyx"
+) -> NDArray[np.float64]:
+    matrices = np.eye(4).reshape(1, 4, 4).repeat(eulerAngles.shape[0], axis=0)
+
+    for i, letter in enumerate(order):
+        if letter == "x":
+            matrices = matrices @ defineRotationXs(eulerAngles[:, i])
+        elif letter == "y":
+            matrices = matrices @ defineRotationYs(eulerAngles[:, i])
+        elif letter == "z":
+            matrices = matrices @ defineRotationZs(eulerAngles[:, i])
+
+    return matrices
+
+
 def defineShift(v: NDArray[np.float64]) -> NDArray[np.float64]:
     mtx = np.array(
         [
@@ -96,6 +153,14 @@ def defineShift(v: NDArray[np.float64]) -> NDArray[np.float64]:
         ]
     )
     return mtx
+
+
+def defineShifts(vs: NDArray[np.float64]) -> NDArray[np.float64]:
+    shift = np.eye(4).reshape(1, 4, 4).repeat(vs.shape[0], axis=0)
+    shift[:, 0, 3] = vs[:, 0]
+    shift[:, 1, 3] = vs[:, 1]
+    shift[:, 2, 3] = vs[:, 2]
+    return shift
 
 
 def toCartesian(p: NDArray[np.float64]):

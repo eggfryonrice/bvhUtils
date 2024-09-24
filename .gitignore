@@ -5,6 +5,7 @@ venv/
 tempCodeRunnerFile.py
 *.bvh
 !example.bvh
+note
 
 # below is basic python .gitignore file
 # ----------------------------------------------------------------
