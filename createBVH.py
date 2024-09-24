@@ -1,5 +1,9 @@
+import numpy as np
+from numpy.typing import NDArray
+
+
 # create new BVH file by data, while having same joint orientation with original file
-def createBVH(originalFilePath: str, filePath: str, datas: list[list[float]]) -> None:
+def createBVH(originalFilePath: str, filePath: str, datas: NDArray[np.float64]) -> None:
     with open(originalFilePath, "r") as of:
         with open(filePath, "w") as f:
             # write lines in upper part to new file

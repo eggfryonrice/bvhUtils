@@ -87,8 +87,8 @@ class BVHFile:
         self.eulerDatas: NDArray[np.float64] = np.zeros(
             (self.numFrames, self.numJoints, 3)
         )
-        nonOffsetIdx = [i for i, name in enumerate(self.jointNames) if name != "Site"]
-        self.eulerDatas[:, nonOffsetIdx, :] = eulerDatas
+        nonEndSiteIdx = [i for i, name in enumerate(self.jointNames) if name != "Site"]
+        self.eulerDatas[:, nonEndSiteIdx, :] = eulerDatas
         self.eulerDatas = self.eulerDatas * math.pi / 180
 
         self.jointsPositions: NDArray[np.float64] = np.zeros(

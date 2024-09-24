@@ -185,7 +185,7 @@ def decomposeTransformationMatrix(
         y = math.atan2(-rotationMatrix[2, 0], sy)
         z = 0
 
-    eulerAngles = np.degrees([x, y, z])
+    eulerAngles = np.array([x, y, z])
 
     return translation, eulerAngles
 
