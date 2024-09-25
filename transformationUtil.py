@@ -165,8 +165,8 @@ def defineShifts(vs: NDArray[np.float64]) -> NDArray[np.float64]:
     return shift
 
 
-def toCartesian(p: NDArray[np.float64]):
-    return p[0:3] / p[3]
+def toCartesian(p: NDArray[np.float64]) -> NDArray[np.float64]:
+    return p[..., :3] / p[..., 3:4]
 
 
 def decomposeTransformationMatrix(
@@ -188,33 +188,3 @@ def decomposeTransformationMatrix(
     eulerAngles = np.array([x, y, z])
 
     return translation, eulerAngles
-
-
-T = TypeVar("T")
-
-
-class MPQueue(Generic[T]):
-    def __init__(self):
-        self.queue = multiprocessing.Queue()
-        self.size = multiprocessing.Value("i", 0)
-
-    def put(self, item: T) -> None:
-        self.queue.put(item)
-        with self.size.get_lock():
-            self.size.value += 1
-
-    def get(self) -> T:
-        item = self.queue.get()
-        with self.size.get_lock():
-            self.size.value -= 1
-        return item
-
-    def qsize(self) -> int:
-        return self.size.value
-
-    def empty(self) -> bool:
-        return self.qsize() == 0
-
-    def clear(self) -> None:
-        while self.qsize() > 0:
-            self.get()

@@ -1,10 +1,9 @@
 import numpy as np
 from numpy.typing import NDArray
 import math
-from typing import Optional
 
 from pygameScene import pygameScene
-from util import *
+from transformationUtil import *
 
 
 class BVHFile:
@@ -98,17 +97,15 @@ class BVHFile:
             False for _ in range(self.numFrames)
         ]
 
-    def getJointsLinksPosition(
+    def getLinks(
         self, jointsPosition: NDArray[np.float64]
-    ) -> tuple[list[NDArray[np.float64]], list[list[NDArray[np.float64]]]]:
-        joints: list[NDArray[np.float64]] = []
+    ) -> list[list[NDArray[np.float64]]]:
         links: list[list[NDArray[np.float64]]] = []
         for jointIdx in range(self.numJoints):
-            joints.append(jointsPosition[jointIdx])
             parentIdx = self.childToParentDict[jointIdx]
             if parentIdx >= 0:
                 links.append([jointsPosition[jointIdx], jointsPosition[parentIdx]])
-        return joints, links
+        return links
 
     # calcualte position of all joints using data of given frame
     def calculateJointsPositionByFrame(
@@ -185,17 +182,17 @@ class BVHFile:
     # return frame, joint, link information
     def updateSceneWithNextFrame(
         self,
-    ) -> tuple[int, list[NDArray[np.float64]], list[list[NDArray[np.float64]]]]:
+    ) -> tuple[int, NDArray[np.float64], list[list[NDArray[np.float64]]]]:
         jointsPosition = self.calculateJointsPositionByFrame(self.currentFrame)
-        joints, links = self.getJointsLinksPosition(jointsPosition)
-        currentData = (self.currentFrame, joints, links)
+        links = self.getLinks(jointsPosition)
+        currentData = (self.currentFrame, jointsPosition, links)
         self.currentFrame = (self.currentFrame + 1) % self.numFrames
         return currentData
 
 
 if __name__ == "__main__":
-    fileName = "example.bvh"
-    file = BVHFile(fileName)
+    filePath = "example.bvh"
+    file = BVHFile(filePath)
     file.calculateJointsPositionByFrame(0)
-    scene = pygameScene(fileName, frameTime=file.frameTime)
+    scene = pygameScene(filePath, frameTime=file.frameTime)
     scene.run(file.updateSceneWithNextFrame)
