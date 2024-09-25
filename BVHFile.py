@@ -152,7 +152,7 @@ class BVHFile:
         return jointsPosition @ transformation.T
 
     # calculate position of given joint given datas
-    def calculateJointPosition(
+    def calculateJointPositionFromData(
         self,
         jointIdx: int,
         translationData: NDArray[np.float64],
