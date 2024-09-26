@@ -97,7 +97,7 @@ class contactAwareAnimator:
         unlockRadius: float = 10,
         footHeight: float = 2,
         toeHeight: float = 2,
-        halfLife: float = 2,
+        halfLife: float = 10,
     ):
         self.file: BVHFile = file
 
@@ -167,6 +167,10 @@ class contactAwareAnimator:
                 handledContactJointsPosition[i, :]
                 for i in range(len(self.contactJoints))
             ]
+            # hightlight = []
+            # for i in range(len(self.contactJoints)):
+            #     if contact[i]:
+            #         hightlight.append(handledContactJointsPosition[i, :])
 
             # adjust joints by IK
 
@@ -177,7 +181,7 @@ class contactAwareAnimator:
 
 
 class exampleDataFtn:
-    def __init__(self, file: BVHFile, contactVelocityThreshold: float = 1):
+    def __init__(self, file: BVHFile, contactVelocityThreshold: float = 2):
         self.file: BVHFile = file
         self.contactVelocityThreshold = contactVelocityThreshold
 
@@ -198,7 +202,7 @@ class exampleDataFtn:
         return (
             self.file.currentFrame,
             self.file.translationDatas[self.file.currentFrame]
-            - np.sin(self.file.currentFrame / 20) * np.array([0, 10, 0]),
+            + (self.file.currentFrame > 10) * np.array([0, 7, 0]),
             self.file.eulerDatas[self.file.currentFrame],
             speed < self.contactVelocityThreshold,
         )
