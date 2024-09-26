@@ -43,7 +43,7 @@ class pygameScene:
     def __init__(
         self,
         caption: str = "",
-        cameraCenter: NDArray[np.float64] = np.array([0, 0, 0]),
+        cameraRotation: NDArray[np.float64] = np.array([math.pi / 4, math.pi, 0.0]),
         frameTime: float = 1 / 60,
         width: int = 1920,
         height: int = 1080,
@@ -55,11 +55,11 @@ class pygameScene:
         self.height: int = height
 
         # get info from reader to get cameracenter and floor position
-        self.cameraCenter: NDArray[np.float64] = cameraCenter
+        self.cameraCenter: NDArray[np.float64] = np.array([0, 0, 0])
 
         # camera transformation info
         self.cameraDistance: int = 2000
-        self.rotationAngle: NDArray[np.float64] = np.array([math.pi / 4, math.pi, 0.0])
+        self.cameraRotation: NDArray[np.float64] = cameraRotation
         self.zoom: float = 2
 
         # input info for camera transformation
@@ -86,7 +86,7 @@ class pygameScene:
     # get projected location on the screen of 4d point
     def projection(self, points: NDArray[np.float64]) -> NDArray[np.int32]:
         cameraDistance = self.cameraDistance
-        rotationAngle = self.rotationAngle
+        rotationAngle = self.cameraRotation
         zoom = self.zoom
 
         rotationX = defineRotationX3D(rotationAngle[0])
@@ -128,7 +128,7 @@ class pygameScene:
                 if event.button == 1:
                     if not self.mouseDragging:
                         self.prevMousePosition = pygame.mouse.get_pos()
-                        self.prevRotationAngle = self.rotationAngle.copy()
+                        self.prevRotationAngle = self.cameraRotation.copy()
                     self.mouseDragging = True
 
             elif event.type == pygame.MOUSEBUTTONUP:
@@ -142,12 +142,12 @@ class pygameScene:
                 if self.mouseDragging:
                     mouseX, mouseY = pygame.mouse.get_pos()
                     dx = mouseX - self.prevMousePosition[0]
-                    dy = mouseY - self.prevMousePosition[1]
-                    self.rotationAngle[0] = (
+                    dy = self.prevMousePosition[1] - mouseY
+                    self.cameraRotation[0] = (
                         self.prevRotationAngle[0]
                         + -1 * dy * math.pi / self.screen.get_rect()[3]
                     )
-                    self.rotationAngle[1] = (
+                    self.cameraRotation[1] = (
                         self.prevRotationAngle[1]
                         + -1 * dx * math.pi / self.screen.get_rect()[2]
                     )
