@@ -169,6 +169,10 @@ def toCartesian(p: NDArray[np.float64]) -> NDArray[np.float64]:
     return p[..., :3] / p[..., 3:4]
 
 
+def toProjective(p: NDArray[np.float64]) -> NDArray[np.float64]:
+    return np.concatenate([p, np.ones((*p.shape[:-1], 1))], axis=-1)
+
+
 def decomposeTransformationMatrix(
     matrix: NDArray[np.float64],
 ) -> tuple[NDArray[np.float64], NDArray[np.float64]]:

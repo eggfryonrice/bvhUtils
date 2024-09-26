@@ -182,10 +182,15 @@ class BVHFile:
     # return frame, joint, link information
     def updateSceneWithNextFrame(
         self,
-    ) -> tuple[int, NDArray[np.float64], list[list[NDArray[np.float64]]]]:
+    ) -> tuple[
+        int,
+        NDArray[np.float64],
+        list[list[NDArray[np.float64]]],
+        list[NDArray[np.float64]],
+    ]:
         jointsPosition = self.calculateJointsPositionByFrame(self.currentFrame)
         links = self.getLinks(jointsPosition)
-        currentData = (self.currentFrame, jointsPosition, links)
+        currentData = (self.currentFrame, jointsPosition, links, [])
         self.currentFrame = (self.currentFrame + 1) % self.numFrames
         return currentData
 
