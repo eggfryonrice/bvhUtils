@@ -15,7 +15,7 @@ class contactHandler:
         unlockRadius: float = 10,
         footHeight: float = 2,
         toeHeight: float = 2,
-        halfLife: float = 1,
+        halfLife: float = 0.15,
     ):
         self.frameTime = frameTime
 
@@ -56,7 +56,7 @@ class contactHandler:
 
     def handleContact(self, inputPosition4D: NDArray[np.float64], contactState: bool):
         inputPosition = toCartesian(inputPosition4D)
-        inputPosition[1] = max([0, inputPosition[1]])
+        inputPosition[1] = max([self.footHeight, inputPosition[1]])
         targetVelocity = (inputPosition - self.dataPosition) / self.frameTime
         self.dataPosition = inputPosition
 
@@ -97,7 +97,7 @@ class contactAwareAnimator:
         unlockRadius: float = 10,
         footHeight: float = 2,
         toeHeight: float = 2,
-        halfLife: float = 10,
+        halfLife: float = 0.15,
     ):
         self.file: BVHFile = file
 
@@ -136,7 +136,7 @@ class contactAwareAnimator:
         int,
         NDArray[np.float64],
         list[list[NDArray[np.float64]]],
-        list[NDArray[np.float64]],
+        list[tuple[NDArray[np.float64], tuple[int, int, int]]],
     ]:
         frame, translationData, eulerData, contact = self.dataFtn()
         jointsPosition = self.file.calculateJointsPositionFromData(
@@ -163,14 +163,14 @@ class contactAwareAnimator:
                     jointsPosition[self.contactJoints[i]], contact[i]
                 )
                 handledContactJointsPosition[i, :] = handledPosition
-            hightlight = [
-                handledContactJointsPosition[i, :]
-                for i in range(len(self.contactJoints))
-            ]
-            # hightlight = []
-            # for i in range(len(self.contactJoints)):
-            #     if contact[i]:
-            #         hightlight.append(handledContactJointsPosition[i, :])
+            # hightlight = [
+            #     handledContactJointsPosition[i, :]
+            #     for i in range(len(self.contactJoints))
+            # ]
+            hightlight = []
+            for i in range(len(self.contactJoints)):
+                if contact[i]:
+                    hightlight.append((handledContactJointsPosition[i, :], (255, 0, 0)))
 
             # adjust joints by IK
 
@@ -181,7 +181,7 @@ class contactAwareAnimator:
 
 
 class exampleDataFtn:
-    def __init__(self, file: BVHFile, contactVelocityThreshold: float = 2):
+    def __init__(self, file: BVHFile, contactVelocityThreshold: float = 1):
         self.file: BVHFile = file
         self.contactVelocityThreshold = contactVelocityThreshold
 
@@ -202,7 +202,7 @@ class exampleDataFtn:
         return (
             self.file.currentFrame,
             self.file.translationDatas[self.file.currentFrame]
-            + (self.file.currentFrame > 10) * np.array([0, 7, 0]),
+            + (self.file.currentFrame > 10) * np.array([0, 5, 0]),
             self.file.eulerDatas[self.file.currentFrame],
             speed < self.contactVelocityThreshold,
         )
@@ -214,6 +214,6 @@ if __name__ == "__main__":
     dataFtn = exampleDataFtn(file)
     animator = contactAwareAnimator(file, dataFtn.ftn)
     scene = pygameScene(
-        filePath, frameTime=file.frameTime * 3, cameraRotation=np.array([0, math.pi, 0])
+        filePath, frameTime=file.frameTime, cameraRotation=np.array([0, math.pi, 0])
     )
     scene.run(animator.updateScene)

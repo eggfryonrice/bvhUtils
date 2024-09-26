@@ -260,7 +260,7 @@ class pygameScene:
                 int,
                 NDArray[np.float64],
                 list[list[NDArray[np.float64]]],
-                list[NDArray[np.float64]],
+                list[tuple[NDArray[np.float64], tuple[int, int, int]]],
             ]
         ],
     ) -> None:
@@ -281,8 +281,8 @@ class pygameScene:
             for link in links:
                 self.drawLineFromHomogenousPoints(link)
 
-            for point in highlightPoints:
-                self.drawHomogeneousPoint(point, color=(255, 0, 0))
+            for point, color in highlightPoints:
+                self.drawHomogeneousPoint(point, color=color)
 
             self.drawElapsedTimeAndFrame(frame)
 
@@ -302,7 +302,7 @@ class pygameScene:
                 int,
                 NDArray[np.float64],
                 list[list[NDArray[np.float64]]],
-                list[NDArray[np.float64]],
+                list[tuple[NDArray[np.float64], tuple[int, int, int]]],
             ]
         ],
         f: Callable[
@@ -311,7 +311,7 @@ class pygameScene:
                 int,
                 NDArray[np.float64],
                 list[list[NDArray[np.float64]]],
-                list[NDArray[np.float64]],
+                list[tuple[NDArray[np.float64], tuple[int, int, int]]],
             ],
         ],
     ) -> None:
@@ -331,7 +331,7 @@ class pygameScene:
                 int,
                 NDArray[np.float64],
                 list[list[NDArray[np.float64]]],
-                list[NDArray[np.float64]],
+                list[tuple[NDArray[np.float64], tuple[int, int, int]]],
             ],
         ],
     ):
@@ -351,9 +351,9 @@ def exampleFunction() -> tuple[
     int,
     NDArray[np.float64],
     list[list[NDArray[np.float64]]],
-    list[NDArray[np.float64]],
+    list[tuple[NDArray[np.float64], tuple[int, int, int]]],
 ]:
-    return (0, np.array([[0, 0, 0, 1]]), [], [np.array([100, 0, 0, 1])])
+    return (0, np.array([[0, 0, 0, 1]]), [], [(np.array([100, 0, 0, 1]), (255, 0, 0))])
 
 
 if __name__ == "__main__":
