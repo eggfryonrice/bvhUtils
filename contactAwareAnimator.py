@@ -22,19 +22,17 @@ class contactHandler:
         self.footHeight = footHeight
         self.halfLife = halfLife
 
-        self.contactState: bool = False
+        self.priorContactState: bool = False
         self.lock: bool = False
 
         # position that will be displayed
         self.position: NDArray[np.float64] = toCartesian(initialPosition)
-        self.positionOffset = np.array([0, 0, 0])
         # moving velocity
         self.velocity: NDArray[np.float64] = np.array([0, 0, 0])
-        self.velocityOffset = np.array([0, 0, 0])
         # position of contact
         self.contactPoint: NDArray[np.float64] = np.array([0, 0, 0])
-        # position of the data
-        self.dataPosition: NDArray[np.float64] = np.array([0, 0, 0])
+        # prior position of input
+        self.priorInputPosition: NDArray[np.float64] = self.position
 
     def damping(
         self,
@@ -50,28 +48,31 @@ class contactHandler:
         j1 = velocityDiff + positionDiff * y
         eydt = np.exp(-y * self.frameTime)
 
-        position = currentPosition + eydt * (positionDiff + j1 * self.frameTime)
-        velocity = currentVelocity + eydt * (velocityDiff - j1 * y * self.frameTime)
+        position = targetPosition - eydt * (positionDiff + j1 * self.frameTime)
+        velocity = targetVelocity - eydt * (velocityDiff - j1 * y * self.frameTime)
 
         return position, velocity
 
     def handleContact(self, inputPosition: NDArray[np.float64], contactState: bool):
         inputPosition[1] = max([self.footHeight, inputPosition[1]])
-        targetVelocity = (inputPosition - self.dataPosition) / self.frameTime
-        self.dataPosition = inputPosition
+        targetVelocity = (inputPosition - self.priorInputPosition) / self.frameTime
+        self.priorInputPosition = inputPosition
 
-        if (not self.contactState) and contactState:
+        if (not self.priorContactState) and contactState:
             self.lock = True
             self.contactPoint = self.position
             self.contactPoint[1] = self.footHeight
 
         if self.lock and (
-            np.linalg.norm(self.dataPosition - self.contactPoint) > self.unlockRadius
+            np.linalg.norm(self.priorInputPosition - self.contactPoint)
+            > self.unlockRadius
         ):
             self.lock = False
 
-        if self.lock and self.contactState and (not contactState):
+        if self.lock and self.priorContactState and (not contactState):
             self.lock = False
+
+        self.priorContactState = contactState
 
         if self.lock:
             targetPosition = self.contactPoint
@@ -82,6 +83,8 @@ class contactHandler:
         self.position, self.velocity = self.damping(
             self.position, targetPosition, self.velocity, targetVelocity
         )
+
+        self.position[1] = max([self.footHeight, self.position[1]])
 
         return self.position
 
@@ -94,9 +97,9 @@ class contactAwareAnimator:
             [], tuple[int, NDArray[np.float64], NDArray[np.float64], NDArray[np.bool]]
         ],
         contactJointNames=["LeftToe", "RightToe"],
-        unlockRadius: float = 10,
+        unlockRadius: float = 30,
         footHeight: float = 2,
-        halfLife: float = 0.1,
+        halfLife: float = 0.03,
     ):
         self.file: BVHFile = file
 
@@ -144,19 +147,9 @@ class contactAwareAnimator:
             )
             self.contactHandlers.append(handler)
 
-    def updateScene(
-        self,
-    ) -> tuple[
-        int,
-        NDArray[np.float64],
-        list[list[NDArray[np.float64]]],
-        list[tuple[NDArray[np.float64], tuple[int, int, int]]],
-    ]:
-        frame, translationData, eulerData, contact = self.dataFtn()
-        jointsPosition = self.file.calculateJointsPositionFromData(
-            translationData, eulerData, self.transformation
-        )
-        highlight = []
+    def adjustJointsPosition(
+        self, jointsPosition: NDArray[np.float64], contact: NDArray[np.bool]
+    ):
 
         if not self.initializedByFirstData:
             # move character so that feet is on the ground
@@ -166,9 +159,7 @@ class contactAwareAnimator:
             # marked that class is now initialized
             self.initializedByFirstData = True
             # initial position is character moved to the ground
-            adjustedJointsPosition = self.file.calculateJointsPositionFromData(
-                translationData, eulerData, self.transformation
-            )
+            adjustedJointsPosition = jointsPosition @ self.transformation.T
         else:
             # calculate where contact joint should move by contact handler
             handledContactJointsPosition = np.zeros((len(self.contactJoints), 4))
@@ -178,8 +169,6 @@ class contactAwareAnimator:
                 # get toe position by contact handler
                 p0 = toCartesian(jointsPosition[self.contactJoints[i]])
                 p0H = self.contactHandlers[i].handleContact(p0, contact[i])
-                if contact[i]:
-                    highlight.append((toProjective(p0H), (255, 0, 0)))
 
                 p1 = toCartesian(jointsPosition[self.contactJointsP1[i]])
                 p1H = p1 + p0H - p0
@@ -207,7 +196,6 @@ class contactAwareAnimator:
                     n = np.cross((p3 - p1H), (p2 - p1))
                     n = np.cross(n, (p3 - p1H))
                     n = n / np.linalg.norm(n)
-                    print((d12**2 - d**2), d13, d23, d12)
                     p2H = p2H + n * ((d12**2 - d**2) ** 0.5)
 
                 handledContactJointsPosition[i, :] = toProjective(p0H)
@@ -225,9 +213,58 @@ class contactAwareAnimator:
             adjustedJointsPosition[self.contactJointsOffset] = (
                 handledContactJointsPosition
             )
+        return adjustedJointsPosition
+
+    def updateScene(
+        self,
+    ) -> tuple[
+        int,
+        NDArray[np.float64],
+        list[list[NDArray[np.float64]]],
+        list[tuple[NDArray[np.float64], tuple[int, int, int]]],
+    ]:
+        frame, translationData, eulerData, contact = self.dataFtn()
+        jointsPosition = self.file.calculateJointsPositionFromData(
+            translationData, eulerData, self.transformation
+        )
+        adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
+
+        highlight = []
+        for i in range(len(self.contactJoints)):
+            if contact[i]:
+                highlight.append(
+                    (adjustedJointsPosition[self.contactJoints[i]], (255, 0, 0))
+                )
 
         links = self.file.getLinks(adjustedJointsPosition)
         return (frame, adjustedJointsPosition, links, highlight)
+
+    # this functionw as made just to show how we pick contact position
+    def updateSceneWithContactTrajectory(
+        self,
+    ) -> tuple[
+        int,
+        NDArray[np.float64],
+        list[list[NDArray[np.float64]]],
+        list[tuple[NDArray[np.float64], tuple[int, int, int]]],
+    ]:
+        frame, translationData, eulerData, contact = self.dataFtn()
+        jointsPosition = self.file.calculateJointsPositionFromData(
+            translationData, eulerData, self.transformation
+        )
+        adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
+
+        highlight = []
+        for i in range(len(self.contactJoints)):
+            highlight.append(
+                (adjustedJointsPosition[self.contactJoints[i]], (255, 0, 0))
+            )
+
+        jointsPosition = self.file.calculateJointsPositionFromData(
+            translationData, eulerData, self.transformation
+        )
+        links = self.file.getLinks(jointsPosition)
+        return (frame, jointsPosition, links, highlight)
 
 
 class exampleDataFtn:
@@ -252,7 +289,7 @@ class exampleDataFtn:
         return (
             self.file.currentFrame,
             self.file.translationDatas[self.file.currentFrame]
-            + (self.file.currentFrame > 10) * np.array([0, -5, 0]),
+            + np.array([self.file.currentFrame * 1, 0, 0]),
             self.file.eulerDatas[self.file.currentFrame],
             speed < self.contactVelocityThreshold,
         )
@@ -264,6 +301,9 @@ if __name__ == "__main__":
     dataFtn = exampleDataFtn(file)
     animator = contactAwareAnimator(file, dataFtn.ftn)
     scene = pygameScene(
-        filePath, frameTime=1 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
+        filePath, frameTime=3 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
     )
     scene.run(animator.updateScene)
+
+    dataFtn.file.currentFrame = 0
+    scene.run(animator.updateSceneWithContactTrajectory)

@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.typing import NDArray
+from typing import Callable
 import math
 
 from pygameScene import pygameScene
@@ -193,6 +194,23 @@ class BVHFile:
         currentData = (self.currentFrame, jointsPosition, links, [])
         self.currentFrame = (self.currentFrame + 1) % self.numFrames
         return currentData
+
+    def updateSceneWithDataFtn(
+        self,
+        dataFtn: Callable[[], tuple[int, NDArray[np.float64], NDArray[np.float64]]],
+    ) -> tuple[
+        int,
+        NDArray[np.float64],
+        list[list[NDArray[np.float64]]],
+        list[tuple[NDArray[np.float64], tuple[int, int, int]]],
+    ]:
+        frame, translationData, eulerData = dataFtn()
+        jointsPosition = self.calculateJointsPositionFromData(
+            translationData, eulerData
+        )
+
+        links = self.getLinks(jointsPosition)
+        return (frame, jointsPosition, links, [])
 
 
 if __name__ == "__main__":

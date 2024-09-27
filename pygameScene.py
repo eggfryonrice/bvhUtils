@@ -43,8 +43,8 @@ class pygameScene:
     def __init__(
         self,
         caption: str = "",
-        cameraRotation: NDArray[np.float64] = np.array([math.pi / 4, math.pi, 0.0]),
         frameTime: float = 1 / 60,
+        cameraRotation: NDArray[np.float64] = np.array([math.pi / 4, math.pi, 0.0]),
         width: int = 1920,
         height: int = 1080,
     ):
@@ -345,6 +345,14 @@ class pygameScene:
 
         p1.join()
         p2.join()
+
+        self.__init__(
+            caption=self.caption,
+            frameTime=self.frameTime,
+            cameraRotation=self.cameraRotation,
+            width=self.width,
+            height=self.height,
+        )
 
 
 def exampleFunction() -> tuple[
