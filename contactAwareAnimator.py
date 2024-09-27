@@ -27,50 +27,45 @@ class contactHandler:
 
         # position that will be displayed
         self.position: NDArray[np.float64] = toCartesian(initialPosition)
+        self.positionOffset: NDArray[np.float64] = np.array([0, 0, 0])
         # moving velocity
         self.velocity: NDArray[np.float64] = np.array([0, 0, 0])
+        self.velocityOffset: NDArray[np.float64] = np.array([0, 0, 0])
         # position of contact
         self.contactPoint: NDArray[np.float64] = np.array([0, 0, 0])
         # prior position of input
         self.priorInputPosition: NDArray[np.float64] = self.position
 
-    def damping(
+    def dampOffset(
         self,
-        currentPosition: NDArray[np.float64],
-        targetPosition: NDArray[np.float64],
-        currentVelocity: NDArray[np.float64],
-        targetVelocity: NDArray[np.float64],
     ):
-        positionDiff = targetPosition - currentPosition
-        velocityDiff = targetVelocity - currentVelocity
 
         y = 2 * 0.6931 / self.halfLife
-        j1 = velocityDiff + positionDiff * y
+        j1 = self.velocityOffset + self.positionOffset * y
         eydt = np.exp(-y * self.frameTime)
 
-        position = targetPosition - eydt * (positionDiff + j1 * self.frameTime)
-        velocity = targetVelocity - eydt * (velocityDiff - j1 * y * self.frameTime)
-
-        return position, velocity
+        self.positionOffset = eydt * (self.positionOffset + j1 * self.frameTime)
+        self.velocityOffset = eydt * (self.velocityOffset - j1 * y * self.frameTime)
 
     def handleContact(self, inputPosition: NDArray[np.float64], contactState: bool):
         inputPosition[1] = max([self.footHeight, inputPosition[1]])
-        targetVelocity = (inputPosition - self.priorInputPosition) / self.frameTime
+        inputVelocity = (inputPosition - self.priorInputPosition) / self.frameTime
         self.priorInputPosition = inputPosition
 
         if (not self.priorContactState) and contactState:
             self.lock = True
             self.contactPoint = self.position
             self.contactPoint[1] = self.footHeight
+            self.positionOffset = self.position - self.contactPoint
+            self.velocityOffset = self.velocity - np.array([0, 0, 0])
 
         if self.lock and (
-            np.linalg.norm(self.priorInputPosition - self.contactPoint)
-            > self.unlockRadius
+            (np.linalg.norm(inputPosition - self.contactPoint) > self.unlockRadius)
+            or (self.priorContactState and (not contactState))
         ):
             self.lock = False
-
-        if self.lock and self.priorContactState and (not contactState):
-            self.lock = False
+            self.positionOffset = self.position - inputPosition
+            self.velocityOffset = self.velocity - inputVelocity
 
         self.priorContactState = contactState
 
@@ -79,10 +74,12 @@ class contactHandler:
             targetVelocity = np.array([0, 0, 0])
         else:
             targetPosition = inputPosition
+            targetVelocity = inputVelocity
 
-        self.position, self.velocity = self.damping(
-            self.position, targetPosition, self.velocity, targetVelocity
-        )
+        self.dampOffset()
+
+        self.position = targetPosition + self.positionOffset
+        self.velocity = targetVelocity + self.velocityOffset
 
         self.position[1] = max([self.footHeight, self.position[1]])
 
@@ -294,7 +291,7 @@ class exampleDataFtn:
         return (
             self.file.currentFrame,
             self.file.translationDatas[self.file.currentFrame]
-            + np.array([self.file.currentFrame * 1, 0, 0]),
+            + np.array([self.file.currentFrame * 2, 0, 0]),
             self.file.eulerDatas[self.file.currentFrame],
             speed < self.contactVelocityThreshold,
         )
@@ -306,7 +303,7 @@ if __name__ == "__main__":
     dataFtn = exampleDataFtn(file)
     animator = contactAwareAnimator(file, dataFtn.ftn)
     scene = pygameScene(
-        filePath, frameTime=3 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
+        filePath, frameTime=1 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
     )
     scene.run(animator.updateScene)
 
