@@ -186,7 +186,7 @@ class BVHFile:
         int,
         NDArray[np.float64],
         list[list[NDArray[np.float64]]],
-        list[NDArray[np.float64]],
+        list[tuple[NDArray[np.float64], tuple[int, int, int]]],
     ]:
         jointsPosition = self.calculateJointsPositionByFrame(self.currentFrame)
         links = self.getLinks(jointsPosition)
