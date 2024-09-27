@@ -7,7 +7,7 @@ from pygameScene import pygameScene
 from transformationUtil import *
 
 
-class contactHandler:
+class contactJointHandler:
     def __init__(
         self,
         initialPosition: NDArray[np.float64],
@@ -87,7 +87,7 @@ class contactHandler:
         return self.position
 
 
-class contactAwareAnimator:
+class contactManager:
     def __init__(
         self,
         file: BVHFile,
@@ -134,9 +134,9 @@ class contactAwareAnimator:
         )
 
     def initializeHandlers(self, jointsPosition: NDArray[np.float64]):
-        self.contactHandlers: list[contactHandler] = []
+        self.contactHandlers: list[contactJointHandler] = []
         for jointIdx in self.contactJoints:
-            handler = contactHandler(
+            handler = contactJointHandler(
                 jointsPosition[jointIdx],
                 self.file.frameTime,
                 unlockRadius=self.unlockRadius,
@@ -303,7 +303,7 @@ if __name__ == "__main__":
     filePath = "example.bvh"
     file = BVHFile(filePath)
     dataFtn = exampleDataFtn(file)
-    animator = contactAwareAnimator(file, dataFtn.ftn)
+    animator = contactManager(file, dataFtn.ftn)
     scene = pygameScene(
         filePath, frameTime=1 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
     )
