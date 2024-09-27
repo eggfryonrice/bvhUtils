@@ -48,6 +48,7 @@ class contactHandler:
         self.velocityOffset = eydt * (self.velocityOffset - j1 * y * self.frameTime)
 
     def handleContact(self, inputPosition: NDArray[np.float64], contactState: bool):
+        inputPosition = inputPosition.copy()
         inputPosition[1] = max([self.footHeight, inputPosition[1]])
         inputVelocity = (inputPosition - self.priorInputPosition) / self.frameTime
         self.priorInputPosition = inputPosition
@@ -178,9 +179,9 @@ class contactAwareAnimator:
                 # handle when contact point is further then leg lenth
                 eps = 1e-3
                 if d13 >= (d12 + d23) * (1 - eps):
-                    d13 = (d12 + d23) * (1 - eps)
                     p1H = p3 + (p1H - p3) / d13 * (d12 + d23) * (1 - eps)
                     p0H = p1H + p0 - p1
+                    d13 = (d12 + d23) * (1 - eps)
 
                 # for resulting p1H, p2H, p3,
                 # when we lay foot of perpendicular from`` p2H to p1H-p3,
@@ -190,7 +191,7 @@ class contactAwareAnimator:
                 # we first move to appropriate point over p3-p1H
                 # then we move p2H along the plane
                 p2H = p1H + (p3 - p1H) / np.linalg.norm(p3 - p1H) * d
-                n = np.cross((p3 - p1H), (p3 - p2))
+                n = np.cross((p3 - p1H), (p0 - p1))
                 n = np.cross(n, (p3 - p1H))
                 n = n / np.linalg.norm(n)
                 p2H = p2H + n * ((d12**2 - d**2) ** 0.5)
@@ -291,7 +292,8 @@ class exampleDataFtn:
         return (
             self.file.currentFrame,
             self.file.translationDatas[self.file.currentFrame]
-            + np.array([self.file.currentFrame * 2, 0, 0]),
+            + np.array([self.file.currentFrame * 0, 0, 0])
+            + (self.file.currentFrame > 45) * np.array([0, -10, 0]),
             self.file.eulerDatas[self.file.currentFrame],
             speed < self.contactVelocityThreshold,
         )
