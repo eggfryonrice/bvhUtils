@@ -171,34 +171,34 @@ class contactAwareAnimator:
                 p1H = p1 + p0H - p0
                 p2 = toCartesian(jointsPosition[self.contactJointsP2[i]])
                 p3 = toCartesian(jointsPosition[self.contactJointsP3[i]])
-                eps = 1e-2
+
                 d12 = np.linalg.norm(p2 - p1)
                 d23 = np.linalg.norm(p3 - p2)
-                d13 = np.clip(np.linalg.norm(p3 - p1H), eps, float("inf"))
+                d13 = np.linalg.norm(p3 - p1H)
                 # handle when contact point is further then leg lenth
-                if d13 >= d23 + d12 - eps:
-                    p2H = p3 + (p1H - p3) / np.linalg.norm(p1H - p3) * d23
-                    p1H = p3 + (p1H - p3) / np.linalg.norm(p1H - p3) * (d12 + d23)
+                eps = 1e-3
+                if d13 >= (d12 + d23) * (1 - eps):
+                    d13 = (d12 + d23) * (1 - eps)
+                    p1H = p3 + (p1H - p3) / d13 * (d12 + d23) * (1 - eps)
                     p0H = p1H + p0 - p1
-                # IK for normal case
-                else:
-                    # for resulting p1H, p2H, p3,
-                    # when we lay foot of perpendicular from`` p2H to p1H-p3,
-                    # then distance from that point from p1H will be saved as d
-                    d = (d13**2 - d23**2 + d12**2) / (2 * d13)
-                    # put p2 into the plane made by p1H, p2, and p3
-                    # we first move to appropriate point over p3-p1H
-                    # then we move p2H along the plane
-                    p2H = p1H + (p3 - p1H) / np.linalg.norm(p3 - p1H) * d
-                    n = np.cross((p3 - p1H), (p3 - p2))
-                    n = np.cross(n, (p3 - p1H))
-                    n = n / np.linalg.norm(n)
-                    p2H = p2H + n * ((d12**2 - d**2) ** 0.5)
-                    # ensure knee doesn't go back
-                    originalCross = np.cross(p3 - p2, p2 - p1)
-                    newCross = np.cross(p3 - p2H, p2H - p1H)
-                    if np.dot(originalCross, newCross) < 0:
-                        p2H = p2H - 2 * n * ((d12**2 - d**2) ** 0.5)
+
+                # for resulting p1H, p2H, p3,
+                # when we lay foot of perpendicular from`` p2H to p1H-p3,
+                # then distance from that point from p1H will be saved as d
+                d = (d13**2 - d23**2 + d12**2) / (2 * d13)
+                # put p2 into the plane made by p1H, p2, and p3
+                # we first move to appropriate point over p3-p1H
+                # then we move p2H along the plane
+                p2H = p1H + (p3 - p1H) / np.linalg.norm(p3 - p1H) * d
+                n = np.cross((p3 - p1H), (p3 - p2))
+                n = np.cross(n, (p3 - p1H))
+                n = n / np.linalg.norm(n)
+                p2H = p2H + n * ((d12**2 - d**2) ** 0.5)
+                # ensure knee doesn't go back
+                originalCross = np.cross(p3 - p2, p2 - p1)
+                newCross = np.cross(p3 - p2H, p2H - p1H)
+                if np.dot(originalCross, newCross) < 0:
+                    p2H = p2H - 2 * n * ((d12**2 - d**2) ** 0.5)
 
                 handledContactJointsPosition[i, :] = toProjective(p0H)
                 handledContactJointsPositionP1[i, :] = toProjective(p1H)
