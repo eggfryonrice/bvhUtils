@@ -1,4 +1,5 @@
 import numpy as np
+from numpy.typing import NDArray
 from typing import Callable
 
 from BVHFile import BVHFile
@@ -6,10 +7,10 @@ from pygameScene import pygameScene
 from transformationUtil import *
 
 
-class contactJointHandler:
+class contactHandler:
     def __init__(
         self,
-        initialPosition: np.ndarray,
+        initialPosition: NDArray[np.float64],
         frameTime: float,
         unlockRadius: float,
         footHeight: float,
@@ -25,17 +26,20 @@ class contactJointHandler:
         self.lock: bool = False
 
         # position that will be displayed
-        self.position: np.ndarray = toCartesian(initialPosition)
-        self.positionOffset: np.ndarray = np.array([0, 0, 0])
+        self.position: NDArray[np.float64] = toCartesian(initialPosition)
+        self.positionOffset: NDArray[np.float64] = np.array([0, 0, 0])
         # moving velocity
-        self.velocity: np.ndarray = np.array([0, 0, 0])
-        self.velocityOffset: np.ndarray = np.array([0, 0, 0])
+        self.velocity: NDArray[np.float64] = np.array([0, 0, 0])
+        self.velocityOffset: NDArray[np.float64] = np.array([0, 0, 0])
         # position of contact
-        self.contactPoint: np.ndarray = np.array([0, 0, 0])
+        self.contactPoint: NDArray[np.float64] = np.array([0, 0, 0])
         # prior position of input
-        self.priorInputPosition: np.ndarray = self.position
+        self.priorInputPosition: NDArray[np.float64] = self.position
 
-    def dampOffset(self):
+    def dampOffset(
+        self,
+    ):
+
         y = 2 * 0.6931 / self.halfLife
         j1 = self.velocityOffset + self.positionOffset * y
         eydt = np.exp(-y * self.frameTime)
@@ -43,7 +47,7 @@ class contactJointHandler:
         self.positionOffset = eydt * (self.positionOffset + j1 * self.frameTime)
         self.velocityOffset = eydt * (self.velocityOffset - j1 * y * self.frameTime)
 
-    def handleContact(self, inputPosition: np.ndarray, contactState: bool):
+    def handleContact(self, inputPosition: NDArray[np.float64], contactState: bool):
         inputPosition = inputPosition.copy()
         inputPosition[1] = max([self.footHeight, inputPosition[1]])
         inputVelocity = (inputPosition - self.priorInputPosition) / self.frameTime
@@ -83,11 +87,13 @@ class contactJointHandler:
         return self.position
 
 
-class contactManager:
+class contactAwareAnimator:
     def __init__(
         self,
         file: BVHFile,
-        dataFtn: Callable[[], tuple[int, np.ndarray, np.ndarray]],
+        dataFtn: Callable[
+            [], tuple[int, NDArray[np.float64], NDArray[np.float64], NDArray[np.bool]]
+        ],
         contactJointNames=["LeftToe", "RightToe"],
         unlockRadius: float = 20,
         footHeight: float = 2,
@@ -119,7 +125,7 @@ class contactManager:
 
     # given position of joints, find joint with lowest y value
     # then transform the animation so that lowest joint globally has footHeight as height
-    def adjustHeight(self, jointsPosition: np.ndarray):
+    def adjustHeight(self, jointsPosition: NDArray[np.float64]):
         jointsHeight = jointsPosition[:, 1] / jointsPosition[:, 3]
         lowestJointHeight = np.min(jointsHeight)
         self.transformation = (
@@ -127,10 +133,10 @@ class contactManager:
             @ self.transformation
         )
 
-    def initializeHandlers(self, jointsPosition: np.ndarray):
-        self.contactHandlers: list[contactJointHandler] = []
+    def initializeHandlers(self, jointsPosition: NDArray[np.float64]):
+        self.contactHandlers: list[contactHandler] = []
         for jointIdx in self.contactJoints:
-            handler = contactJointHandler(
+            handler = contactHandler(
                 jointsPosition[jointIdx],
                 self.file.frameTime,
                 unlockRadius=self.unlockRadius,
@@ -139,7 +145,9 @@ class contactManager:
             )
             self.contactHandlers.append(handler)
 
-    def adjustJointsPosition(self, jointsPosition: np.ndarray, contact: np.ndarray):
+    def adjustJointsPosition(
+        self, jointsPosition: NDArray[np.float64], contact: NDArray[np.bool]
+    ):
 
         if not self.initializedByFirstData:
             # move character so that feet is on the ground
@@ -197,7 +205,7 @@ class contactManager:
                 handledContactJointsPositionP1[i, :] = toProjective(p1H)
                 handledContactJointsPositionP2[i, :] = toProjective(p2H)
 
-            adjustedJointsPosition = jointsPosition.copy()
+            adjustedJointsPosition = jointsPosition
             adjustedJointsPosition[self.contactJoints] = handledContactJointsPosition
             adjustedJointsPosition[self.contactJointsP1] = (
                 handledContactJointsPositionP1
@@ -214,12 +222,14 @@ class contactManager:
         self,
     ) -> tuple[
         int,
-        np.ndarray,
-        list[list[np.ndarray]],
-        list[tuple[np.ndarray, tuple[int, int, int]]],
+        NDArray[np.float64],
+        list[list[NDArray[np.float64]]],
+        list[tuple[NDArray[np.float64], tuple[int, int, int]]],
     ]:
-        frame, jointsPosition, contact = self.dataFtn()
-        jointsPosition = jointsPosition @ self.transformation.T
+        frame, translationData, eulerData, contact = self.dataFtn()
+        jointsPosition = self.file.calculateJointsPositionFromData(
+            translationData, eulerData, self.transformation
+        )
         adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
 
         highlight = []
@@ -237,13 +247,14 @@ class contactManager:
         self,
     ) -> tuple[
         int,
-        np.ndarray,
-        list[list[np.ndarray]],
-        list[tuple[np.ndarray, tuple[int, int, int]]],
+        NDArray[np.float64],
+        list[list[NDArray[np.float64]]],
+        list[tuple[NDArray[np.float64], tuple[int, int, int]]],
     ]:
-        frame, jointsPosition, contact = self.dataFtn()
-        jointsPosition = jointsPosition @ self.transformation.T
-        initialized = self.initializedByFirstData
+        frame, translationData, eulerData, contact = self.dataFtn()
+        jointsPosition = self.file.calculateJointsPositionFromData(
+            translationData, eulerData, self.transformation
+        )
         adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
 
         highlight = []
@@ -252,9 +263,9 @@ class contactManager:
                 (adjustedJointsPosition[self.contactJoints[i]], (255, 0, 0))
             )
 
-        if not initialized:
-            jointsPosition = jointsPosition @ self.transformation.T
-
+        jointsPosition = self.file.calculateJointsPositionFromData(
+            translationData, eulerData, self.transformation
+        )
         links = self.file.getLinks(jointsPosition)
         return (frame, jointsPosition, links, highlight)
 
@@ -266,7 +277,7 @@ class exampleDataFtn:
 
     def ftn(
         self,
-    ) -> tuple[int, np.ndarray, np.ndarray]:
+    ) -> tuple[int, NDArray[np.float64], NDArray[np.float64], NDArray[np.bool]]:
         prevFrame = self.file.currentFrame
         self.file.currentFrame = (self.file.currentFrame + 1) % self.file.numFrames
         prevPosition = toCartesian(
@@ -278,20 +289,12 @@ class exampleDataFtn:
         velocity = currentPosition - prevPosition
         speed = np.linalg.norm(velocity, axis=1)
 
-        translationData = (
-            self.file.translationDatas[self.file.currentFrame]
-            + np.array([self.file.currentFrame * 0, 0, 0])
-            + (self.file.currentFrame > 45) * np.array([0, -10, 0])
-        )
-        eulerData = self.file.eulerDatas[self.file.currentFrame]
-
-        jointsPosition = self.file.calculateJointsPositionFromData(
-            translationData, eulerData
-        )
-
         return (
             self.file.currentFrame,
-            jointsPosition,
+            self.file.translationDatas[self.file.currentFrame]
+            + np.array([self.file.currentFrame * 0, 0, 0])
+            + (self.file.currentFrame > 45) * np.array([0, -10, 0]),
+            self.file.eulerDatas[self.file.currentFrame],
             speed < self.contactVelocityThreshold,
         )
 
@@ -300,11 +303,11 @@ if __name__ == "__main__":
     filePath = "example.bvh"
     file = BVHFile(filePath)
     dataFtn = exampleDataFtn(file)
-    manager = contactManager(file, dataFtn.ftn)
+    animator = contactAwareAnimator(file, dataFtn.ftn)
     scene = pygameScene(
         filePath, frameTime=1 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
     )
-    scene.run(manager.updateScene)
+    scene.run(animator.updateScene)
 
     dataFtn.file.currentFrame = 0
-    scene.run(manager.updateSceneWithContactTrajectory)
+    scene.run(animator.updateSceneWithContactTrajectory)

@@ -1,11 +1,11 @@
 import pygame
 import numpy as np
-from numpy.typing import NDArray
 import math
 import time
+import multiprocessing
 from multiprocessing import Process
 from queue import Queue
-from typing import Callable
+from typing import Callable, TypeVar, Generic
 
 from transformationUtil import *
 
@@ -44,7 +44,7 @@ class pygameScene:
         self,
         caption: str = "",
         frameTime: float = 1 / 60,
-        cameraRotation: NDArray[np.float64] = np.array([math.pi / 4, math.pi, 0.0]),
+        cameraRotation: np.ndarray = np.array([math.pi / 4, math.pi, 0.0]),
         width: int = 1920,
         height: int = 1080,
     ):
@@ -55,17 +55,17 @@ class pygameScene:
         self.height: int = height
 
         # get info from reader to get cameracenter and floor position
-        self.cameraCenter: NDArray[np.float64] = np.array([0, 0, 0])
+        self.cameraCenter: np.ndarray = np.array([0, 0, 0])
 
         # camera transformation info
         self.cameraDistance: int = 2000
-        self.cameraRotation: NDArray[np.float64] = cameraRotation
+        self.cameraRotation: np.ndarray = cameraRotation
         self.zoom: float = 2
 
         # input info for camera transformation
         self.mouseDragging: bool = False
         self.prevMousePosition: tuple[int, int] = (0, 0)
-        self.prevRotationAngle: NDArray[np.float64] = np.array([0, 0, 0])
+        self.prevRotationAngle: np.ndarray = np.array([0, 0, 0])
 
         self.frameTime: float = frameTime
 
@@ -76,7 +76,7 @@ class pygameScene:
         pygame.display.set_caption(self.caption)
         self.clock = pygame.time.Clock()
 
-    def updateCameraCenter(self, jointsPosition: NDArray[np.float64]) -> None:
+    def updateCameraCenter(self, jointsPosition: np.ndarray) -> None:
         if len(jointsPosition) == 0:
             return
         self.cameraCenter = jointsPosition[0, 0:3] / jointsPosition[0, 3]
@@ -84,14 +84,14 @@ class pygameScene:
         self.cameraCenter[1] = np.min(jointsHeight)
 
     # get projected location on the screen of 4d point
-    def projection(self, points: NDArray[np.float64]) -> NDArray[np.int32]:
+    def projection(self, points: np.ndarray) -> np.ndarray:
         cameraDistance = self.cameraDistance
         rotationAngle = self.cameraRotation
         zoom = self.zoom
 
-        rotationX = defineRotationX3D(rotationAngle[0])
-        rotationY = defineRotationY3D(rotationAngle[1])
-        rotationZ = defineRotationZ3D(rotationAngle[2])
+        rotationX = rotationMatX3D(rotationAngle[0])
+        rotationY = rotationMatY3D(rotationAngle[1])
+        rotationZ = rotationMatZ3D(rotationAngle[2])
 
         singlePoint = False
         if points.ndim == 1 and points.shape == (4,):
@@ -161,7 +161,7 @@ class pygameScene:
     # draw homogeneous point
     def drawHomogeneousPoint(
         self,
-        point: NDArray[np.float64],
+        point: np.ndarray,
         color: tuple[int, int, int] = (255, 255, 255),
         size: int = 4,
     ) -> None:
@@ -170,7 +170,7 @@ class pygameScene:
     # draw homogeneous points, gets n * 4 np array of positions as input
     def drawHomogeneousPoints(
         self,
-        pointsPosition: NDArray[np.float64],
+        pointsPosition: np.ndarray,
         color: tuple[int, int, int] = (255, 255, 255),
         size: int = 4,
     ) -> None:
@@ -181,7 +181,7 @@ class pygameScene:
     # draw line through series of homogeneous points
     def drawLineFromHomogenousPoints(
         self,
-        points: list[NDArray[np.float64]],
+        points: list[np.ndarray],
         color: tuple[int, int, int] = (255, 255, 255),
         width: int = 2,
     ) -> None:
@@ -258,9 +258,9 @@ class pygameScene:
         queue: Queue[
             tuple[
                 int,
-                NDArray[np.float64],
-                list[list[NDArray[np.float64]]],
-                list[tuple[NDArray[np.float64], tuple[int, int, int]]],
+                np.ndarray,
+                list[list[np.ndarray]],
+                list[tuple[np.ndarray, tuple[int, int, int]]],
             ]
         ],
     ) -> None:
@@ -300,18 +300,18 @@ class pygameScene:
         queue: MPQueue[
             tuple[
                 int,
-                NDArray[np.float64],
-                list[list[NDArray[np.float64]]],
-                list[tuple[NDArray[np.float64], tuple[int, int, int]]],
+                np.ndarray,
+                list[list[np.ndarray]],
+                list[tuple[np.ndarray, tuple[int, int, int]]],
             ]
         ],
         f: Callable[
             [],
             tuple[
                 int,
-                NDArray[np.float64],
-                list[list[NDArray[np.float64]]],
-                list[tuple[NDArray[np.float64], tuple[int, int, int]]],
+                np.ndarray,
+                list[list[np.ndarray]],
+                list[tuple[np.ndarray, tuple[int, int, int]]],
             ],
         ],
     ) -> None:
@@ -329,9 +329,9 @@ class pygameScene:
             [],
             tuple[
                 int,
-                NDArray[np.float64],
-                list[list[NDArray[np.float64]]],
-                list[tuple[NDArray[np.float64], tuple[int, int, int]]],
+                np.ndarray,
+                list[list[np.ndarray]],
+                list[tuple[np.ndarray, tuple[int, int, int]]],
             ],
         ],
     ):
@@ -357,9 +357,9 @@ class pygameScene:
 
 def exampleFunction() -> tuple[
     int,
-    NDArray[np.float64],
-    list[list[NDArray[np.float64]]],
-    list[tuple[NDArray[np.float64], tuple[int, int, int]]],
+    np.ndarray,
+    list[list[np.ndarray]],
+    list[tuple[np.ndarray, tuple[int, int, int]]],
 ]:
     return (0, np.array([[0, 0, 0, 1]]), [], [(np.array([100, 0, 0, 1]), (255, 0, 0))])
 

@@ -3,6 +3,7 @@ venv/
 .vscode/
 .DS_Store
 tempCodeRunnerFile.py
+experiment.py
 *.bvh
 !example.bvh
 note

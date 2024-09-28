@@ -1,6 +1,5 @@
 import math
 import numpy as np
-from numpy.typing import NDArray
 
 from BVHFile import BVHFile
 from pygameScene import pygameScene
@@ -13,7 +12,7 @@ def cutBVH(filePath: str, newFilePath: str, t1: float, t2: float):
     startFrame: int = int(t1 / file.frameTime)
     endFrame: int = min(file.numFrames - 1, int(t2 / file.frameTime))
     nonEndSiteIdx = [i for i, name in enumerate(file.jointNames) if name != "Site"]
-    datas: NDArray[np.float64] = np.zeros((file.numFrames, len(nonEndSiteIdx) * 3 + 3))
+    datas: np.ndarray = np.zeros((file.numFrames, len(nonEndSiteIdx) * 3 + 3))
     datas[:, :3] = file.translationDatas
     datas[:, 3:] = (file.eulerDatas[:, nonEndSiteIdx, :] * 180 / math.pi).reshape(
         (file.numFrames, len(nonEndSiteIdx) * 3)
