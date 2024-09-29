@@ -23,7 +23,7 @@ def cutBVH(filePath: str, newFilePath: str, t1: float, t2: float):
 if __name__ == "__main__":
     originalFilePath = "example.bvh"
     newFilePath = "example_cut.bvh"
-    cutBVH(originalFilePath, newFilePath, 1, 2)
+    cutBVH(originalFilePath, newFilePath, 2, 4)
     file = BVHFile(newFilePath)
-    scene = pygameScene(newFilePath)
+    scene = pygameScene(newFilePath, file.frameTime)
     scene.run(file.updateSceneWithNextFrame)

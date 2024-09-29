@@ -100,7 +100,7 @@ class BVHFile:
         return links
 
     # calcualte position of all joints using data of given frame
-    def calculateJointsPositionByFrame(
+    def calculateJointsPositionFromFrame(
         self, frame: int, transformation: np.ndarray = np.eye(4)
     ) -> np.ndarray:
         if self.jointsPositionCalculated[frame]:
@@ -171,6 +171,30 @@ class BVHFile:
 
         return transformation @ jointPosition
 
+    def calculateJointsPositionFromQuaternionData(
+        self,
+        translationData: np.ndarray,
+        quaternionData: np.ndarray,
+        transformation: np.ndarray = np.eye(4),
+    ) -> np.ndarray:
+        rotations = quatsToMat(quaternionData)
+
+        jointsTransformation = np.zeros((self.numJoints, 4, 4))
+        jointsTransformation[0] = translationMat(translationData)
+
+        for jointIdx in range(1, self.numJoints):
+            parentIdx = self.childToParentDict[jointIdx]
+            jointsTransformation[jointIdx] = (
+                jointsTransformation[parentIdx]
+                @ self.jointOffsetShifts[parentIdx]
+                @ rotations[parentIdx]
+            )
+        jointsPosition = np.einsum(
+            "ijk,ik->ij", jointsTransformation, self.jointOffsets
+        )
+
+        return jointsPosition @ transformation.T
+
     # return frame, joint, link information
     def updateSceneWithNextFrame(
         self,
@@ -180,7 +204,7 @@ class BVHFile:
         list[list[np.ndarray]],
         list[tuple[np.ndarray, tuple[int, int, int]]],
     ]:
-        jointsPosition = self.calculateJointsPositionByFrame(self.currentFrame)
+        jointsPosition = self.calculateJointsPositionFromFrame(self.currentFrame)
         links = self.getLinks(jointsPosition)
         currentData = (self.currentFrame, jointsPosition, links, [])
         self.currentFrame = (self.currentFrame + 1) % self.numFrames
@@ -207,6 +231,6 @@ class BVHFile:
 if __name__ == "__main__":
     filePath = "example.bvh"
     file = BVHFile(filePath)
-    file.calculateJointsPositionByFrame(0)
+    file.calculateJointsPositionFromFrame(0)
     scene = pygameScene(filePath, frameTime=file.frameTime)
     scene.run(file.updateSceneWithNextFrame)

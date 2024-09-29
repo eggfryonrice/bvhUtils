@@ -1,5 +1,6 @@
 import math
 import numpy as np
+from typing import Optional
 
 
 def rotationMatX(theta: float) -> np.ndarray:
@@ -194,12 +195,87 @@ def quatX(theta: float) -> np.ndarray:
     return np.array([math.cos(theta / 2), math.sin(theta / 2), 0, 0])
 
 
+def quatXs(angles: np.ndarray) -> np.ndarray:
+    halfedAngles = angles / 2
+    return np.stack(
+        [
+            np.cos(halfedAngles),
+            np.sin(halfedAngles),
+            np.zeros_like(halfedAngles),
+            np.zeros_like(halfedAngles),
+        ],
+        axis=-1,
+    )
+
+
 def quatY(theta: float) -> np.ndarray:
     return np.array([math.cos(theta / 2), 0, math.sin(theta / 2), 0])
 
 
+def quatYs(angles: np.ndarray) -> np.ndarray:
+    halfedAngles = angles / 2
+    return np.stack(
+        [
+            np.cos(halfedAngles),
+            np.zeros_like(halfedAngles),
+            np.sin(halfedAngles),
+            np.zeros_like(halfedAngles),
+        ],
+        axis=-1,
+    )
+
+
 def quatZ(theta: float) -> np.ndarray:
     return np.array([math.cos(theta / 2), 0, 0, math.sin(theta / 2)])
+
+
+def quatZs(angles: np.ndarray) -> np.ndarray:
+    halfedAngles = angles / 2
+    return np.stack(
+        [
+            np.cos(halfedAngles),
+            np.zeros_like(halfedAngles),
+            np.zeros_like(halfedAngles),
+            np.sin(halfedAngles),
+        ],
+        axis=-1,
+    )
+
+
+def invQuat(q: np.ndarray) -> np.ndarray:
+    invQ = q.copy()
+    invQ[0] = -invQ[0]
+    return invQ
+
+
+def invQuats(q: np.ndarray) -> np.ndarray:
+    invQ = q.copy()
+    invQ[..., 0] = -invQ[..., 0]
+    return invQ
+
+
+def multQuat(p: np.ndarray, q: np.ndarray) -> np.ndarray:
+    w1, x1, y1, z1 = p
+    w2, x2, y2, z2 = q
+
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+
+    return np.array([w, x, y, z])
+
+
+def multQuats(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
+    w1, x1, y1, z1 = np.split(q1, 4, axis=-1)
+    w2, x2, y2, z2 = np.split(q2, 4, axis=-1)
+
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+
+    return np.concatenate([w, x, y, z], axis=-1)
 
 
 def EulerToQuat(eulerAngles: np.ndarray, order: str = "zyx") -> np.ndarray:
@@ -216,21 +292,22 @@ def EulerToQuat(eulerAngles: np.ndarray, order: str = "zyx") -> np.ndarray:
     return q
 
 
-def invQuat(q: np.ndarray) -> np.ndarray:
-    invQ = q.copy()
-    invQ[0] = -invQ[0]
-    return invQ
+def eulersToQuats(eulerAngles: np.ndarray, order: str = "zyx") -> np.ndarray:
+    q = np.ones(eulerAngles.shape[:-1] + (4,))
+    q[..., 1:4] = 0.0
 
+    axisToFtx = {
+        "x": quatXs,
+        "y": quatYs,
+        "z": quatZs,
+    }
 
-def multQuat(p: np.ndarray, q: np.ndarray) -> np.ndarray:
-    return np.array(
-        [
-            p[0] * q[0] - p[1] * q[1] - p[2] * q[2] - p[3] * q[3],
-            p[0] * q[1] + p[1] * q[0] - p[2] * q[3] + p[3] * q[2],
-            p[0] * q[2] + p[1] * q[3] + p[2] * q[0] - p[3] * q[1],
-            p[0] * q[3] - p[1] * q[2] + p[2] * q[1] + p[3] * q[0],
-        ]
-    )
+    for i, axis in enumerate(order):
+        ftn = axisToFtx[axis]
+        axisQuat = ftn(eulerAngles[..., i])
+        q = multQuats(q, axisQuat)
+
+    return q
 
 
 def multQuatVec(q: np.ndarray, v: np.ndarray) -> np.ndarray:
@@ -244,10 +321,17 @@ def absQuat(q: np.ndarray):
     return q
 
 
-def quatToMatrix(q: np.ndarray) -> np.ndarray:
+def absQuats(q: np.ndarray):
+    negMask = q[..., 0] < 0.0
+    absQ = q.copy()
+    absQ[negMask] = -1 * q[negMask]
+    return absQ
+
+
+def quatToMat(q: np.ndarray) -> np.ndarray:
     w, x, y, z = q
 
-    rotation_matrix = np.array(
+    rot = np.array(
         [
             [1 - 2 * y**2 - 2 * z**2, 2 * x * y - 2 * z * w, 2 * x * z + 2 * y * w],
             [2 * x * y + 2 * z * w, 1 - 2 * x**2 - 2 * z**2, 2 * y * z - 2 * x * w],
@@ -255,10 +339,37 @@ def quatToMatrix(q: np.ndarray) -> np.ndarray:
         ]
     )
 
-    transformation_matrix = np.eye(4)
-    transformation_matrix[:3, :3] = rotation_matrix
+    mtx = np.eye(4)
+    mtx[:3, :3] = rot
 
-    return transformation_matrix
+    return mtx
+
+
+def quatsToMat(q: np.ndarray) -> np.ndarray:
+    w = q[..., 0]
+    x = q[..., 1]
+    y = q[..., 2]
+    z = q[..., 3]
+
+    rot = np.zeros(q.shape[:-1] + (3, 3))
+
+    rot[..., 0, 0] = 1 - 2 * (y**2 + z**2)
+    rot[..., 0, 1] = 2 * (x * y - z * w)
+    rot[..., 0, 2] = 2 * (x * z + y * w)
+
+    rot[..., 1, 0] = 2 * (x * y + z * w)
+    rot[..., 1, 1] = 1 - 2 * (x**2 + z**2)
+    rot[..., 1, 2] = 2 * (y * z - x * w)
+
+    rot[..., 2, 0] = 2 * (x * z - y * w)
+    rot[..., 2, 1] = 2 * (y * z + x * w)
+    rot[..., 2, 2] = 1 - 2 * (x**2 + y**2)
+
+    mat = np.eye(4)[np.newaxis, ...].repeat(q.shape[0], axis=0)
+
+    mat[..., :3, :3] = rot
+
+    return mat
 
 
 def quatToScaledAngleAxis(q: np.ndarray) -> np.ndarray:
@@ -268,10 +379,31 @@ def quatToScaledAngleAxis(q: np.ndarray) -> np.ndarray:
         return q[1:4].copy()
 
     angle = 2 * np.acos(np.clip(q[0], -1, 1))
+    if angle > np.pi:
+        angle -= 2 * np.pi
     return angle * q[1:4] / axisLength
 
 
-def scaledAngledAxisToQuat(v: np.ndarray) -> np.ndarray:
+def quatsToScaledAngleAxises(q: np.ndarray) -> np.ndarray:
+    axisLengths = np.linalg.norm(q[..., 1:], axis=-1, keepdims=True)
+
+    # below this threshold, we assume sin(theta) = theta
+    threshold = 1e-8
+
+    angles = 2 * np.acos(np.clip(q[..., 0], -1, 1))
+    angles = np.where(angles > np.pi, angles - 2 * np.pi, angles)
+
+    result = q[..., 1:4].copy()
+
+    mask = (axisLengths >= threshold).squeeze(-1)
+    result[mask] = (angles[..., np.newaxis][mask] * q[..., 1:4][mask]) / axisLengths[
+        mask
+    ]
+
+    return result
+
+
+def scaledAngleAxisToQuat(v: np.ndarray) -> np.ndarray:
     angle = np.linalg.norm(v)
 
     if angle < 1e-8:
@@ -281,3 +413,52 @@ def scaledAngledAxisToQuat(v: np.ndarray) -> np.ndarray:
     q = np.array([np.cos(angle / 2), 0, 0, 0])
     q[1:4] = np.sin(angle / 2) * v
     return q
+
+
+def scaledAngleAxisesToQuats(v: np.ndarray) -> np.ndarray:
+    angles = np.linalg.norm(v, axis=-1, keepdims=True)
+
+    quats = np.zeros(v.shape[:-1] + (4,))
+
+    threshold = 1e-8
+    smallMask = (angles < threshold).squeeze(-1)
+
+    quats[smallMask, 0] = 1
+    quats[smallMask, 1:] = v[smallMask]
+    norms = np.linalg.norm(quats[smallMask], axis=-1, keepdims=True)
+    quats[smallMask] /= norms
+
+    # For non-small angles, calculate the quaternion
+    notSmallMask = ~smallMask
+    halfAngles = angles[notSmallMask] / 2.0
+    quats[notSmallMask, 0] = np.cos(halfAngles).squeeze()
+    quats[notSmallMask, 1:] = np.sin(halfAngles).squeeze()[..., np.newaxis] * (
+        v[notSmallMask] / angles[notSmallMask]
+    )
+
+    return quats
+
+
+def computeTransformationFromPointsPair(
+    A: np.ndarray, B: np.ndarray, w: Optional[np.ndarray] = None
+) -> np.ndarray:
+    if w is None:
+        w = np.array([1.0 for _ in range(A.shape[0])])
+
+    Ax, Az, Bx, Bz = A[:, 0], A[:, 2], B[:, 0], B[:, 2]
+    AxBar, AzBar, BxBar, BzBar = sum(w * Ax), sum(w * Az), sum(w * Bx), sum(w * Bz)
+
+    # equation 2 of motion graph
+    upleft = (w * (Ax * Bz - Bx * Az)).sum()
+    upright = (AxBar * BzBar - BxBar * AzBar) / w.sum()
+    downleft = (w * (Ax * Bx + Az * Bz)).sum()
+    downright = (AxBar * BxBar + AzBar * BzBar) / w.sum()
+    theta = math.atan((upleft - upright) / (downleft - downright))
+
+    # equation 3, 4 of motion graph
+    x0 = (AxBar - BxBar * math.cos(theta) - BzBar * math.sin(theta)) / w.sum()
+    z0 = (AzBar + BxBar * math.sin(theta) - BzBar * math.cos(theta)) / w.sum()
+
+    transformation = translationMat(np.array([x0, 0, z0])) @ rotationMatY(theta)
+
+    return transformation

@@ -270,16 +270,18 @@ class pygameScene:
         frame, jointsPosition, links, highlightPoints = queue.get()
 
         # adjust camera center with respect to first joints information
-        self.updateCameraCenter(jointsPosition)
+        if jointsPosition.size > 0:
+            self.updateCameraCenter(jointsPosition)
 
         while self.running.value:
             self.handleInput()
             self.screen.fill((0, 0, 0))
             self.drawFloor()
 
-            self.drawHomogeneousPoints(jointsPosition)
-            for link in links:
-                self.drawLineFromHomogenousPoints(link)
+            if jointsPosition.size > 0:
+                self.drawHomogeneousPoints(jointsPosition)
+                for link in links:
+                    self.drawLineFromHomogenousPoints(link)
 
             for point, color in highlightPoints:
                 self.drawHomogeneousPoint(point, color=color)

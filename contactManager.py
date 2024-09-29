@@ -1,5 +1,6 @@
 import numpy as np
 from typing import Callable
+import sys
 
 from BVHFile import BVHFile
 from pygameScene import pygameScene
@@ -87,11 +88,10 @@ class contactManager:
     def __init__(
         self,
         file: BVHFile,
-        dataFtn: Callable[[], tuple[int, np.ndarray, np.ndarray]],
         contactJointNames=["LeftToe", "RightToe"],
         unlockRadius: float = 20,
         footHeight: float = 2,
-        halfLife: float = 0.03,
+        halfLife: float = 0.15,
     ):
         self.file: BVHFile = file
 
@@ -109,13 +109,16 @@ class contactManager:
 
         self.transformation = np.eye(4)
 
-        self.dataFtn = dataFtn
+        self.dataFtn: Optional[Callable[[], tuple[int, np.ndarray, np.ndarray]]] = None
 
         self.unlockRadius = unlockRadius
         self.footHeight = footHeight
         self.halfLife = halfLife
 
         self.initializedByFirstData = False
+
+    def setDataFtn(self, ftn: Callable[[], tuple[int, np.ndarray, np.ndarray]]):
+        self.dataFtn = ftn
 
     # given position of joints, find joint with lowest y value
     # then transform the animation so that lowest joint globally has footHeight as height
@@ -140,6 +143,7 @@ class contactManager:
             self.contactHandlers.append(handler)
 
     def adjustJointsPosition(self, jointsPosition: np.ndarray, contact: np.ndarray):
+        jointsPosition = jointsPosition @ self.transformation.T
 
         if not self.initializedByFirstData:
             # move character so that feet is on the ground
@@ -208,6 +212,7 @@ class contactManager:
             adjustedJointsPosition[self.contactJointsEndSite] = (
                 handledContactJointsPosition
             )
+
         return adjustedJointsPosition
 
     def updateScene(
@@ -218,8 +223,10 @@ class contactManager:
         list[list[np.ndarray]],
         list[tuple[np.ndarray, tuple[int, int, int]]],
     ]:
+        if self.dataFtn == None:
+            print("assign appropriate data function to run contact manager")
+            return (0, np.array([[]]), [], [])
         frame, jointsPosition, contact = self.dataFtn()
-        jointsPosition = jointsPosition @ self.transformation.T
         adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
 
         highlight = []
@@ -241,6 +248,10 @@ class contactManager:
         list[list[np.ndarray]],
         list[tuple[np.ndarray, tuple[int, int, int]]],
     ]:
+        if self.dataFtn == None:
+            print("assign appropriate data function to run contact manager")
+            return (0, np.array([[]]), [], [])
+
         frame, jointsPosition, contact = self.dataFtn()
         jointsPosition = jointsPosition @ self.transformation.T
         initialized = self.initializedByFirstData
@@ -270,10 +281,10 @@ class exampleDataFtn:
         prevFrame = self.file.currentFrame
         self.file.currentFrame = (self.file.currentFrame + 1) % self.file.numFrames
         prevPosition = toCartesian(
-            self.file.calculateJointsPositionByFrame(prevFrame)[[4, 9]]
+            self.file.calculateJointsPositionFromFrame(prevFrame)[[4, 9]]
         )
         currentPosition = toCartesian(
-            self.file.calculateJointsPositionByFrame(self.file.currentFrame)[[4, 9]]
+            self.file.calculateJointsPositionFromFrame(self.file.currentFrame)[[4, 9]]
         )
         velocity = currentPosition - prevPosition
         speed = np.linalg.norm(velocity, axis=1)
@@ -300,7 +311,8 @@ if __name__ == "__main__":
     filePath = "example.bvh"
     file = BVHFile(filePath)
     dataFtn = exampleDataFtn(file)
-    manager = contactManager(file, dataFtn.ftn)
+    manager = contactManager(file)
+    manager.setDataFtn(dataFtn.ftn)
     scene = pygameScene(
         filePath, frameTime=1 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
     )

@@ -281,10 +281,10 @@ class exampleDataFtn:
         prevFrame = self.file.currentFrame
         self.file.currentFrame = (self.file.currentFrame + 1) % self.file.numFrames
         prevPosition = toCartesian(
-            self.file.calculateJointsPositionByFrame(prevFrame)[[4, 9]]
+            self.file.calculateJointsPositionFromFrame(prevFrame)[[4, 9]]
         )
         currentPosition = toCartesian(
-            self.file.calculateJointsPositionByFrame(self.file.currentFrame)[[4, 9]]
+            self.file.calculateJointsPositionFromFrame(self.file.currentFrame)[[4, 9]]
         )
         velocity = currentPosition - prevPosition
         speed = np.linalg.norm(velocity, axis=1)
