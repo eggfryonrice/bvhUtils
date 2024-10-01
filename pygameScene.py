@@ -54,8 +54,8 @@ class pygameScene:
         caption: str = "",
         frameTime: float = 1 / 60,
         cameraRotation: np.ndarray = np.array([math.pi / 4, math.pi, 0.0]),
-        width: int = 1920,
-        height: int = 1080,
+        width: int = 1600,
+        height: int = 1200,
     ):
         self.running = multiprocessing.Value("i", True)
 

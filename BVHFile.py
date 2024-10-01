@@ -177,7 +177,7 @@ class BVHFile:
         quaternionData: np.ndarray,
         transformation: np.ndarray = np.eye(4),
     ) -> np.ndarray:
-        rotations = quatsToMat(quaternionData)
+        rotations = quatsToMats(quaternionData)
 
         jointsTransformation = np.zeros((self.numJoints, 4, 4))
         jointsTransformation[0] = translationMat(translationData)
@@ -194,6 +194,33 @@ class BVHFile:
         )
 
         return jointsPosition @ transformation.T
+
+    def calculateJointPositionFromQuaternionData(
+        self,
+        jointIdx: int,
+        translationData: np.ndarray,
+        quaternionData: np.ndarray,
+        transformation: np.ndarray = np.eye(4),
+    ) -> np.ndarray:
+        rootToJoint: list[int] = [jointIdx]
+        while rootToJoint[-1] != 0:
+            rootToJoint.append(self.childToParentDict[rootToJoint[-1]])
+        rootToJoint.reverse()
+
+        rotations = quatsToMats(quaternionData[rootToJoint])
+
+        jointsTransformation = np.zeros((len(rootToJoint), 4, 4))
+        jointsTransformation[0] = translationMat(translationData)
+
+        for i in range(1, len(rootToJoint)):
+            jointsTransformation[i] = (
+                jointsTransformation[i - 1]
+                @ self.jointOffsetShifts[self.childToParentDict[rootToJoint[i]]]
+                @ rotations[i - 1]
+            )
+        jointPosition = jointsTransformation[-1] @ self.jointOffsets[jointIdx]
+
+        return transformation @ jointPosition
 
     # return frame, joint, link information
     def updateSceneWithNextFrame(self) -> sceneInput:
@@ -220,7 +247,7 @@ class BVHFile:
 
 
 if __name__ == "__main__":
-    filePath = "example.bvh"
+    filePath = "dancing.bvh"
     file = BVHFile(filePath)
     file.calculateJointsPositionFromFrame(0)
     scene = pygameScene(filePath, frameTime=file.frameTime)

@@ -2,20 +2,20 @@ import numpy as np
 from typing import Callable
 
 from BVHFile import BVHFile
-from pygameScene import pygameScene
+from pygameScene import pygameScene, sceneInput
 from contactManager import contactManager
 from transformationUtil import *
 
-# frame, translationData, eulerData, transformation, discontinuity flag
-managerInput = tuple[int, np.ndarray, np.ndarray, np.ndarray, bool]
+# frame, translationData, eulerData, discontinuity flag
+inertializationManagerInput = tuple[int, np.ndarray, np.ndarray, bool]
 
 
 class inertializationManager:
     def __init__(
         self,
         file: BVHFile,
-        dataFtn: Callable[[], managerInput],
-        halfLife: float = 0.35,
+        dataFtn: Callable[[], inertializationManagerInput],
+        halfLife: float = 0.15,
         handleContact=True,
         contactJointNames=["LeftToe", "RightToe"],
         unlockRadius: float = 20,
@@ -28,9 +28,9 @@ class inertializationManager:
 
         self.halfLife = halfLife
 
-        self.currentData: managerInput = self.dataFtn()
-        self.nextData: managerInput = self.dataFtn()
-        self.previousData: managerInput = self.currentData
+        self.currentData: inertializationManagerInput = self.dataFtn()
+        self.nextData: inertializationManagerInput = self.dataFtn()
+        self.previousData: inertializationManagerInput = self.currentData
 
         self.translationOffset = np.array([0, 0, 0])
         self.translationVelocityOffset = np.array([0, 0, 0])
@@ -75,28 +75,19 @@ class inertializationManager:
             self.jointsQuatVelocityOffset - j1 * y * self.file.frameTime
         )
 
-    def getQuaternionData(
-        self, eulerData: np.ndarray, transformation: np.ndarray
-    ) -> np.ndarray:
-        quaternionData = eulersToQuats(eulerData)
-        quaternionData[0] = multQuat(matToQuat(transformation), quaternionData[0])
-        return quaternionData
-
     # discontinuity signs is true on last frame before discontinuity
     # data is given as following. when discontinuity happens at frame 3, data order is
     # 1, 2, 3, 3, 4, 5, ....
     # where first 3 is motion before discontinuity at frame 3,
     # and second 3 is motion after discontinuity at frame 3
     def adjustJointsPosition(self) -> tuple[int, np.ndarray]:
-        frame, currTranslationData, currEulerData, currTransformation, discontinuity = (
-            self.currentData
-        )
+        frame, currTranslationData, currQuatData, discontinuity = self.currentData
 
         self.dampOffsets()
         translationData = currTranslationData + self.translationOffset
-        quaternionData = multQuats(self.jointsQuatOffset, eulersToQuats(currEulerData))
+        quatData = multQuats(self.jointsQuatOffset, currQuatData)
         jointsPosition = self.file.calculateJointsPositionFromQuaternionData(
-            translationData, quaternionData, currTransformation
+            translationData, quatData
         )
 
         # in normal case, return offset considered joint position
@@ -108,31 +99,27 @@ class inertializationManager:
 
         # on discontinuity, we need information for two frames prior to discontinuity,
         # two frames after discontinuity
-        _, prevTranslationData, prevEulerData, prevTransformation, _ = self.previousData
-        frame, nextTranslationData, nextEulerData, nextTransformation, _ = self.nextData
+        _, prevTranslationData, prevQuatData, _ = self.previousData
+        frame, nextTranslationData, nextQuatData, _ = self.nextData
         nnextData = self.dataFtn()
-        _, nnextTranslationData, nnextEulerData, nnextTransformation, _ = nnextData
+        _, nnextTranslationData, nnextQuatData, _ = nnextData
 
         # calculate current source root Position and velocity,
         # joints quat and quatVelocity
         prevRootPosition = toCartesian(
-            self.file.calculateJointPositionFromData(
-                0, prevTranslationData, prevEulerData, prevTransformation
+            self.file.calculateJointPositionFromQuaternionData(
+                0, prevTranslationData, prevQuatData
             )
         )
         currRootPosition = toCartesian(
-            self.file.calculateJointPositionFromData(
-                0, currTranslationData, currEulerData, currTransformation
+            self.file.calculateJointPositionFromQuaternionData(
+                0, currTranslationData, currQuatData
             )
         )
         currRootVelocity = (currRootPosition - prevRootPosition) / self.file.frameTime
 
-        prevQuaternionData = self.getQuaternionData(prevEulerData, prevTransformation)
-        currQuaternionData = self.getQuaternionData(currEulerData, currTransformation)
         currQuatVelocity = (
-            quatsToScaledAngleAxises(
-                multQuats(currQuaternionData, invQuats(prevQuaternionData))
-            )
+            quatsToScaledAngleAxises(multQuats(currQuatData, invQuats(prevQuatData)))
             / self.file.frameTime
         )
 
@@ -140,25 +127,19 @@ class inertializationManager:
         # joints quat and quatVelocity
         nextRootPosition = toCartesian(
             self.file.calculateJointPositionFromData(
-                0, nextTranslationData, nextEulerData, nextTransformation
+                0, nextTranslationData, nextQuatData
             )
         )
         nnextRootPosition = toCartesian(
             self.file.calculateJointPositionFromData(
-                0, nnextTranslationData, nnextEulerData, nnextTransformation
+                0, nnextTranslationData, nnextQuatData
             )
         )
 
         nextRootVelocity = (nnextRootPosition - nextRootPosition) / self.file.frameTime
 
-        nextQuaternionData = self.getQuaternionData(nextEulerData, nextTransformation)
-        nnextQuaternionData = self.getQuaternionData(
-            nnextEulerData, nnextTransformation
-        )
         nextQuatVelocity = (
-            quatsToScaledAngleAxises(
-                multQuats(nnextQuaternionData, invQuats(nextQuaternionData))
-            )
+            quatsToScaledAngleAxises(multQuats(nnextQuatData, invQuats(nextQuatData)))
             / self.file.frameTime
         )
 
@@ -171,8 +152,8 @@ class inertializationManager:
         )
         self.jointsQuatOffset = absQuats(
             multQuats(
-                multQuats(self.jointsQuatOffset, currQuaternionData),
-                invQuats(nextQuaternionData),
+                multQuats(self.jointsQuatOffset, currQuatData),
+                invQuats(nextQuatData),
             )
         )
 
@@ -185,12 +166,7 @@ class inertializationManager:
         self.nextData = self.dataFtn()
         return frame, jointsPosition
 
-    def updateScene(self) -> tuple[
-        int,
-        np.ndarray,
-        list[list[np.ndarray]],
-        list[tuple[np.ndarray, tuple[int, int, int]]],
-    ]:
+    def updateScene(self) -> sceneInput:
         frame, jointsPosition = self.adjustJointsPosition()
 
         if self.handleContact:
@@ -211,12 +187,12 @@ class inertializationManager:
             )
 
         links = self.file.getLinks(jointsPosition)
-        return frame, jointsPosition, links, []
+        return frame, [(jointsPosition, (255, 255, 255))], [(links, (255, 255, 255))]
 
 
 class exampleDataFtn1:
-    def __init__(self):
-        file = BVHFile("example.bvh")
+    def __init__(self, filePath):
+        file = BVHFile(filePath)
         self.file: BVHFile = file
         self.translation = np.array([0, 0, 0])
 
@@ -230,7 +206,7 @@ class exampleDataFtn1:
             [1, 0, 1]
         )
 
-    def ftn(self) -> managerInput:
+    def ftn(self) -> inertializationManagerInput:
         self.file.currentFrame += 1
         if self.file.currentFrame >= self.file.numFrames:
             self.file.currentFrame = 0
@@ -239,18 +215,17 @@ class exampleDataFtn1:
         return (
             self.file.currentFrame,
             (self.file.translationDatas[self.file.currentFrame] + self.translation),
-            self.file.eulerDatas[self.file.currentFrame],
-            np.eye(4),
+            eulersToQuats(self.file.eulerDatas[self.file.currentFrame]),
             ((self.file.currentFrame == self.file.numFrames - 1)),
         )
 
 
 class exampleDataFtn2:
-    def __init__(self):
-        file = BVHFile("example.bvh")
+    def __init__(self, filePath):
+        file = BVHFile(filePath)
         self.file: BVHFile = file
 
-    def ftn(self) -> managerInput:
+    def ftn(self) -> inertializationManagerInput:
         self.file.currentFrame += 1
         if self.file.currentFrame >= self.file.numFrames:
             self.file.currentFrame = 0
@@ -260,72 +235,88 @@ class exampleDataFtn2:
                 self.file.translationDatas[self.file.currentFrame]
                 + (self.file.currentFrame > 45) * np.array([0, -30, 0])
             ),
-            self.file.eulerDatas[self.file.currentFrame],
-            np.eye(4),
+            eulersToQuats(self.file.eulerDatas[self.file.currentFrame]),
             (self.file.currentFrame == 45),
         )
 
 
 class exampleDataFtn3:
-    def __init__(self):
-        file1 = BVHFile("walking.bvh")
-        file2 = BVHFile("dancing.bvh")
+    def __init__(self, filePath1, fileFrame1, filePath2, fileFrame2):
+        file1 = BVHFile(filePath1)
+        file2 = BVHFile(filePath2)
         self.file1: BVHFile = file1
         self.file2: BVHFile = file2
-        self.file1Frame: int = 227
-        self.file2Frame: int = 99
+        self.file1Frame: int = fileFrame1
+        self.file2Frame: int = fileFrame2
         self.currentFrame = 0
         self.beforeDiscontinuity = True
 
         jointsPosition1 = self.file1.calculateJointsPositionFromFrame(self.file1Frame)
         jointsPosition2 = self.file2.calculateJointsPositionFromFrame(self.file2Frame)
+
         self.afterDiscontinuityTransformation = computeTransformationFromPointsPair(
             jointsPosition1, jointsPosition2
         )
 
-    def ftn(self) -> managerInput:
+        self.prepTime = 60
+
+    def ftn(self) -> inertializationManagerInput:
+        frame = self.currentFrame
         if self.beforeDiscontinuity:
-            if self.currentFrame == 60:
+            if self.file1Frame - self.prepTime < 0:
+                self.currentFrame = self.prepTime - self.file1Frame
+            translationData = self.file1.translationDatas[
+                self.file1Frame - self.prepTime + self.currentFrame
+            ]
+            eulerData = self.file1.eulerDatas[
+                self.file1Frame - self.prepTime + self.currentFrame
+            ]
+            quatData = eulersToQuats(eulerData)
+            if self.currentFrame == self.prepTime:
                 self.beforeDiscontinuity = False
-                return (
-                    self.currentFrame,
-                    self.file1.translationDatas[
-                        self.file1Frame - 60 + self.currentFrame
-                    ],
-                    self.file1.eulerDatas[self.file1Frame - 60 + self.currentFrame],
-                    np.eye(4),
-                    True,
-                )
-            data = (
-                self.currentFrame,
-                self.file1.translationDatas[self.file1Frame - 60 + self.currentFrame],
-                self.file1.eulerDatas[self.file1Frame - 60 + self.currentFrame],
-                np.eye(4),
-                False,
-            )
+                return (frame, translationData, quatData, True)
             self.currentFrame += 1
-            return data
+            return (frame, translationData, quatData, False)
         else:
-            data = (
-                self.currentFrame,
-                self.file2.translationDatas[self.file2Frame - 60 + self.currentFrame],
-                self.file2.eulerDatas[self.file2Frame - 60 + self.currentFrame],
-                self.afterDiscontinuityTransformation,
-                False,
-            )
-            self.currentFrame += 1
-            if self.currentFrame > 120:
+            if (self.currentFrame > self.prepTime * 2) or (
+                self.file2Frame - self.prepTime + self.currentFrame
+                >= self.file2.numFrames
+            ):
                 self.beforeDiscontinuity = True
                 self.currentFrame = 0
-            return data
+            translationData = self.file2.translationDatas[
+                self.file2Frame - self.prepTime + self.currentFrame
+            ]
+            eulerData = self.file2.eulerDatas[
+                self.file2Frame - self.prepTime + self.currentFrame
+            ]
+            translationData = toCartesian(
+                self.afterDiscontinuityTransformation
+                @ toProjective(
+                    translationData + toCartesian(self.file2.jointOffsets[0])
+                )
+            ) - toCartesian(self.file2.jointOffsets[0])
+            quatData = eulersToQuats(eulerData)
+            quatData[0] = multQuat(
+                matToQuat(self.afterDiscontinuityTransformation), quatData[0]
+            )
+
+            self.currentFrame += 1
+            return (frame, translationData, quatData, False)
 
 
 if __name__ == "__main__":
+    dataFtn = exampleDataFtn1("example.bvh")
+    dataFtn = exampleDataFtn2("example.bvh")
+    dataFtn = exampleDataFtn3("walking.bvh", 363, "dancing.bvh", 128)
+    dataFtn = exampleDataFtn3("walking.bvh", 345, "dancing.bvh", 161)
+
     filePath = "example.bvh"
     file = BVHFile(filePath)
-    dataFtn = exampleDataFtn3()
     manager = inertializationManager(file, dataFtn.ftn, handleContact=False)
     scene = pygameScene(
-        filePath, frameTime=3 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
+        filePath,
+        frameTime=3 * file.frameTime,
+        cameraRotation=np.array([0, math.pi, 0]),
     )
     scene.run(manager.updateScene)

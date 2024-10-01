@@ -189,7 +189,7 @@ class contactManager:
                 # we take p2 Direciton this way:
                 p2Direction1 = orthogonalComponent(p3 - p1H, p2 - p3)
                 p2Direction2 = orthogonalComponent(p3 - p1H, p0 - p1)
-                p2Direction = p2Direction1 * 2  # + p2Direction2
+                p2Direction = p2Direction1 * 2 + p2Direction2
                 n = np.cross((p3 - p1H), p2Direction)
                 n = np.cross(n, (p3 - p1H))
                 n = normalize(n)
