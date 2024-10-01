@@ -1,9 +1,8 @@
 import numpy as np
 from typing import Callable
-import sys
 
 from BVHFile import BVHFile
-from pygameScene import pygameScene
+from pygameScene import pygameScene, sceneInput
 from transformationUtil import *
 
 
@@ -173,7 +172,7 @@ class contactManager:
                 d23 = np.linalg.norm(p3 - p2)
                 d13 = np.linalg.norm(p3 - p1H)
                 # handle when contact point is further then leg lenth
-                eps = 1e-3
+                eps = 1e-2
                 if d13 >= (d12 + d23) * (1 - eps):
                     p1H = p3 + (p1H - p3) / d13 * (d12 + d23) * (1 - eps)
                     p0H = p1H + p0 - p1
@@ -183,13 +182,17 @@ class contactManager:
                 # when we lay foot of perpendicular from p2H to p1H-p3,
                 # then distance from that point from p1H will be saved as d
                 d = (d13**2 - d23**2 + d12**2) / (2 * d13)
-                # put p2 into the plane made by p1H, p2, and p3
+                # put p2 into the plane with plane vector p3-p1 and p2Dirction
                 # we first move to appropriate point over p3-p1H
                 # then we move p2H along the plane
-                p2H = p1H + (p3 - p1H) / np.linalg.norm(p3 - p1H) * d
-                n = np.cross((p3 - p1H), (p0 - p1))
+                p2H = p1H + normalize(p3 - p1H) * d
+                # we take p2 Direciton this way:
+                p2Direction1 = orthogonalComponent(p3 - p1H, p2 - p3)
+                p2Direction2 = orthogonalComponent(p3 - p1H, p0 - p1)
+                p2Direction = p2Direction1 * 2  # + p2Direction2
+                n = np.cross((p3 - p1H), p2Direction)
                 n = np.cross(n, (p3 - p1H))
-                n = n / np.linalg.norm(n)
+                n = normalize(n)
                 p2H = p2H + n * ((d12**2 - d**2) ** 0.5)
                 # ensure knee doesn't go back
                 originalCross = np.cross(p3 - p2, p2 - p1)
@@ -215,57 +218,45 @@ class contactManager:
 
         return adjustedJointsPosition
 
-    def updateScene(
-        self,
-    ) -> tuple[
-        int,
-        np.ndarray,
-        list[list[np.ndarray]],
-        list[tuple[np.ndarray, tuple[int, int, int]]],
-    ]:
+    def updateScene(self) -> sceneInput:
         if self.dataFtn == None:
             print("assign appropriate data function to run contact manager")
-            return (0, np.array([[]]), [], [])
+            return (0, [], [])
         frame, jointsPosition, contact = self.dataFtn()
         adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
 
         highlight = []
         for i in range(len(self.contactJoints)):
             if contact[i]:
-                highlight.append(
-                    (adjustedJointsPosition[self.contactJoints[i]], (255, 0, 0))
-                )
+                highlight.append(adjustedJointsPosition[self.contactJoints[i]])
 
         links = self.file.getLinks(adjustedJointsPosition)
-        return (frame, adjustedJointsPosition, links, highlight)
+        return (
+            frame,
+            [
+                (adjustedJointsPosition, (255, 255, 255)),
+                (np.array(highlight), (255, 0, 0)),
+            ],
+            [(links, (255, 255, 255))],
+        )
 
     # this functionw as made just to show how we pick contact position
-    def updateSceneWithContactTrajectory(
-        self,
-    ) -> tuple[
-        int,
-        np.ndarray,
-        list[list[np.ndarray]],
-        list[tuple[np.ndarray, tuple[int, int, int]]],
-    ]:
+    def updateSceneWithContactTrajectory(self) -> sceneInput:
         if self.dataFtn == None:
             print("assign appropriate data function to run contact manager")
-            return (0, np.array([[]]), [], [])
+            return (0, [], [])
 
         frame, jointsPosition, contact = self.dataFtn()
-        initialized = self.initializedByFirstData
         adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
-
-        highlight = []
-        for i in range(len(self.contactJoints)):
-            highlight.append(
-                (adjustedJointsPosition[self.contactJoints[i]], (255, 0, 0))
-            )
-
         jointsPosition = jointsPosition @ self.transformation.T
 
+        adjustedLinks = self.file.getLinks(adjustedJointsPosition)
         links = self.file.getLinks(jointsPosition)
-        return (frame, jointsPosition, links, highlight)
+        return (
+            frame,
+            [(adjustedJointsPosition, (255, 0, 0)), (jointsPosition, (255, 255, 255))],
+            [(adjustedLinks, (255, 0, 0)), (links, (255, 255, 255))],
+        )
 
 
 class exampleDataFtn:
@@ -289,8 +280,8 @@ class exampleDataFtn:
 
         translationData = (
             self.file.translationDatas[self.file.currentFrame]
-            + np.array([self.file.currentFrame * 1, 0, 0])
-            + (self.file.currentFrame > 45) * np.array([0, -0, 0])
+            + np.array([self.file.currentFrame * 0, 0, 0])
+            + (self.file.currentFrame > 45) * np.array([0, -30, 0])
         )
         eulerData = self.file.eulerDatas[self.file.currentFrame]
 
@@ -306,7 +297,7 @@ class exampleDataFtn:
 
 
 if __name__ == "__main__":
-    filePath = "dancing.bvh"
+    filePath = "example.bvh"
     file = BVHFile(filePath)
     scene = pygameScene(
         filePath, frameTime=1 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
@@ -315,9 +306,9 @@ if __name__ == "__main__":
     dataFtn = exampleDataFtn(file)
     manager = contactManager(file)
     manager.setDataFtn(dataFtn.ftn)
-    scene.run(manager.updateScene)
+    scene.run(manager.updateSceneWithContactTrajectory)
 
     dataFtn = exampleDataFtn(file)
     manager = contactManager(file)
     manager.setDataFtn(dataFtn.ftn)
-    scene.run(manager.updateSceneWithContactTrajectory)
+    scene.run(manager.updateScene)

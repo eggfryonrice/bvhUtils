@@ -2,7 +2,7 @@ import numpy as np
 from typing import Callable
 import math
 
-from pygameScene import pygameScene
+from pygameScene import pygameScene, sceneInput
 from transformationUtil import *
 
 
@@ -196,43 +196,27 @@ class BVHFile:
         return jointsPosition @ transformation.T
 
     # return frame, joint, link information
-    def updateSceneWithNextFrame(
-        self,
-    ) -> tuple[
-        int,
-        np.ndarray,
-        list[list[np.ndarray]],
-        list[tuple[np.ndarray, tuple[int, int, int]]],
-    ]:
+    def updateSceneWithNextFrame(self) -> sceneInput:
         jointsPosition = self.calculateJointsPositionFromFrame(self.currentFrame)
-
-        # translationData = np.zeros_like(self.translationDatas[0])
-        # eulerData = np.zeros_like(self.eulerDatas[0])
-        # jointsPosition = self.calculateJointsPositionFromData(
-        #     translationData, eulerData
-        # )
-
         links = self.getLinks(jointsPosition)
-        currentData = (self.currentFrame, jointsPosition, links, [])
+        currentData = (
+            self.currentFrame,
+            [(jointsPosition, (255, 255, 255))],
+            [(links, (255, 255, 255))],
+        )
         self.currentFrame = (self.currentFrame + 1) % self.numFrames
         return currentData
 
     def updateSceneWithDataFtn(
-        self,
-        dataFtn: Callable[[], tuple[int, np.ndarray, np.ndarray]],
-    ) -> tuple[
-        int,
-        np.ndarray,
-        list[list[np.ndarray]],
-        list[tuple[np.ndarray, tuple[int, int, int]]],
-    ]:
+        self, dataFtn: Callable[[], tuple[int, np.ndarray, np.ndarray]]
+    ) -> sceneInput:
         frame, translationData, eulerData = dataFtn()
         jointsPosition = self.calculateJointsPositionFromData(
             translationData, eulerData
         )
 
         links = self.getLinks(jointsPosition)
-        return (frame, jointsPosition, links, [])
+        return (frame, [(jointsPosition, (255, 255, 255))], [(links, (255, 255, 255))])
 
 
 if __name__ == "__main__":

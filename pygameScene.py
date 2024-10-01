@@ -39,6 +39,15 @@ class MPQueue(Generic[T]):
             self.get()
 
 
+# scene input are frame int, list of joints coupled with its color, list of links coupled with its color
+# frame, jointsPositions, linkss
+sceneInput = tuple[
+    int,
+    list[tuple[np.ndarray, tuple[int, int, int]]],
+    list[tuple[list[list[np.ndarray]], tuple[int, int, int]]],
+]
+
+
 class pygameScene:
     def __init__(
         self,
@@ -76,11 +85,13 @@ class pygameScene:
         pygame.display.set_caption(self.caption)
         self.clock = pygame.time.Clock()
 
-    def updateCameraCenter(self, jointsPosition: np.ndarray) -> None:
+    def updateCameraCenter(
+        self, jointsPosition: list[tuple[np.ndarray, tuple[int, int, int]]]
+    ) -> None:
         if len(jointsPosition) == 0:
             return
-        self.cameraCenter = jointsPosition[0, 0:3] / jointsPosition[0, 3]
-        jointsHeight = jointsPosition[:, 1] / jointsPosition[:, 3]
+        self.cameraCenter = jointsPosition[0][0][0, 0:3] / jointsPosition[0][0][0, 3]
+        jointsHeight = jointsPosition[0][0][:, 1] / jointsPosition[0][0][:, 3]
         self.cameraCenter[1] = np.min(jointsHeight)
 
     # get projected location on the screen of 4d point
@@ -174,6 +185,8 @@ class pygameScene:
         color: tuple[int, int, int] = (255, 255, 255),
         size: int = 4,
     ) -> None:
+        if pointsPosition.size == 0:
+            return
         pointsPosition2D = self.projection(pointsPosition)
         for i in range(pointsPosition.shape[0]):
             pygame.draw.circle(self.screen, color, pointsPosition2D[i], size)
@@ -255,41 +268,31 @@ class pygameScene:
     # element of Queue is tuple of int, list of points, and list of lines to be drawn
     def displayScene(
         self,
-        queue: Queue[
-            tuple[
-                int,
-                np.ndarray,
-                list[list[np.ndarray]],
-                list[tuple[np.ndarray, tuple[int, int, int]]],
-            ]
-        ],
+        queue: Queue[sceneInput],
     ) -> None:
         self.setupPygame()
         while self.running.value and queue.empty():
             self.clock.tick(1 / self.frameTime)
-        frame, jointsPosition, links, highlightPoints = queue.get()
+        frame, jointsPositions, linkss = queue.get()
 
         # adjust camera center with respect to first joints information
-        if jointsPosition.size > 0:
-            self.updateCameraCenter(jointsPosition)
+        self.updateCameraCenter(jointsPositions)
 
         while self.running.value:
             self.handleInput()
             self.screen.fill((0, 0, 0))
             self.drawFloor()
 
-            if jointsPosition.size > 0:
-                self.drawHomogeneousPoints(jointsPosition)
+            for jointsPosition, color in jointsPositions:
+                self.drawHomogeneousPoints(jointsPosition, color)
+            for links, color in linkss:
                 for link in links:
-                    self.drawLineFromHomogenousPoints(link)
-
-            for point, color in highlightPoints:
-                self.drawHomogeneousPoint(point, color=color)
+                    self.drawLineFromHomogenousPoints(link, color)
 
             self.drawElapsedTimeAndFrame(frame)
 
             if not queue.empty():
-                frame, jointsPosition, links, highlightPoints = queue.get()
+                frame, jointsPositions, linkss = queue.get()
             else:
                 self.drawPendingIcon()
 
@@ -299,22 +302,10 @@ class pygameScene:
 
     def enqueueData(
         self,
-        queue: MPQueue[
-            tuple[
-                int,
-                np.ndarray,
-                list[list[np.ndarray]],
-                list[tuple[np.ndarray, tuple[int, int, int]]],
-            ]
-        ],
+        queue: MPQueue[sceneInput],
         f: Callable[
             [],
-            tuple[
-                int,
-                np.ndarray,
-                list[list[np.ndarray]],
-                list[tuple[np.ndarray, tuple[int, int, int]]],
-            ],
+            sceneInput,
         ],
     ) -> None:
         while self.running.value:
@@ -325,18 +316,7 @@ class pygameScene:
 
         queue.clear()
 
-    def run(
-        self,
-        f: Callable[
-            [],
-            tuple[
-                int,
-                np.ndarray,
-                list[list[np.ndarray]],
-                list[tuple[np.ndarray, tuple[int, int, int]]],
-            ],
-        ],
-    ):
+    def run(self, f: Callable[[], sceneInput]):
         queue = MPQueue()
 
         p1 = Process(target=self.displayScene, args=(queue,))
@@ -357,13 +337,8 @@ class pygameScene:
         )
 
 
-def exampleFunction() -> tuple[
-    int,
-    np.ndarray,
-    list[list[np.ndarray]],
-    list[tuple[np.ndarray, tuple[int, int, int]]],
-]:
-    return (0, np.array([[0, 0, 0, 1]]), [], [(np.array([100, 0, 0, 1]), (255, 0, 0))])
+def exampleFunction() -> sceneInput:
+    return (0, [(np.array([[0, 0, 0, 1]]), (255, 0, 0))], [])
 
 
 if __name__ == "__main__":

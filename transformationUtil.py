@@ -3,6 +3,20 @@ import numpy as np
 from typing import Optional
 
 
+def normalize(v: np.ndarray) -> np.ndarray:
+    return v / np.linalg.norm(v)
+
+
+# projection of v2 into v1
+def projection(v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
+    return np.dot(v1, v2) / np.dot(v1, v1) * v1
+
+
+# orthogonal component of v2 with respect to v1
+def orthogonalComponent(v1: np.ndarray, v2: np.ndarray) -> np.ndarray:
+    return v2 - np.dot(v1, v2) / np.dot(v1, v1) * v1
+
+
 def rotationMatX(theta: float) -> np.ndarray:
     cosTheta = math.cos(theta)
     sinTheta = math.sin(theta)
@@ -431,7 +445,7 @@ def scaledAngleAxisToQuat(v: np.ndarray) -> np.ndarray:
 
     if angle < 1e-8:
         q = np.array([1, v[0], v[1], v[2]])
-        return q / np.linalg.norm(q)
+        return normalize(q)
 
     q = np.array([np.cos(angle / 2), 0, 0, 0])
     q[1:4] = np.sin(angle / 2) * v
