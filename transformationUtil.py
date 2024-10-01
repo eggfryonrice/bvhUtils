@@ -84,7 +84,7 @@ def rotationMatZ3D(theta: float) -> np.ndarray:
     return mtx
 
 
-def rotaitonMatXs(angles: np.ndarray) -> np.ndarray:
+def rotationMatXs(angles: np.ndarray) -> np.ndarray:
     cos = np.cos(angles)
     sin = np.sin(angles)
     rotation_x = np.zeros((angles.shape[0], 4, 4))
@@ -125,12 +125,26 @@ def rotationMatZs(angles: np.ndarray) -> np.ndarray:
     return rotation_z
 
 
-def eulerToMat(eulerAngles: np.ndarray, order: str = "zyx") -> np.ndarray:
+def eulerToMat(eulerAngle: np.ndarray, order: str = "zyx") -> np.ndarray:
+    matrix = np.eye(4)
+
+    for i, letter in enumerate(order):
+        ftn = {
+            "x": rotationMatX,
+            "y": rotationMatY,
+            "z": rotationMatZ,
+        }[letter]
+        matrix = np.einsum("...ij,...jk->...ik", matrix, ftn(eulerAngle[i]))
+
+    return matrix
+
+
+def eulersToMats(eulerAngles: np.ndarray, order: str = "zyx") -> np.ndarray:
     matrices = np.eye(4).reshape(1, 4, 4).repeat(eulerAngles.shape[0], axis=0)
 
     for i, letter in enumerate(order):
         ftn = {
-            "x": rotaitonMatXs,
+            "x": rotationMatXs,
             "y": rotationMatYs,
             "z": rotationMatZs,
         }[letter]
@@ -167,30 +181,7 @@ def toProjective(p: np.ndarray) -> np.ndarray:
     return np.concatenate([p, np.ones((*p.shape[:-1], 1))], axis=-1)
 
 
-def MatToEulerAndTranslation(
-    matrix: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray]:
-    translation = matrix[:3, 3]
-    rotationMatrix = matrix[:3, :3]
-
-    sy = math.sqrt(rotationMatrix[2, 1] ** 2 + rotationMatrix[2, 2] ** 2)
-    if sy >= 1e-6:  # if not singular
-        x = math.atan2(rotationMatrix[2, 1], rotationMatrix[2, 2])
-        y = math.atan2(-rotationMatrix[2, 0], sy)
-        z = math.atan2(rotationMatrix[1, 0], rotationMatrix[0, 0])
-    else:
-        x = math.atan2(-rotationMatrix[1, 2], rotationMatrix[1, 1])
-        y = math.atan2(-rotationMatrix[2, 0], sy)
-        z = 0
-
-    eulerAngles = np.array([x, y, z])
-
-    return translation, eulerAngles
-
-
 # represent quaternion by np array with shape (4) with [w, x, y, z] values
-
-
 def quatX(theta: float) -> np.ndarray:
     return np.array([math.cos(theta / 2), math.sin(theta / 2), 0, 0])
 
@@ -370,6 +361,38 @@ def quatsToMat(q: np.ndarray) -> np.ndarray:
     mat[..., :3, :3] = rot
 
     return mat
+
+
+def matToQuat(mat: np.ndarray) -> np.ndarray:
+    m = mat[:3, :3]
+    trace = np.trace(m)
+
+    if trace > 0:
+        s = 2.0 * np.sqrt(trace + 1.0)
+        w = 0.25 * s
+        x = (m[2, 1] - m[1, 2]) / s
+        y = (m[0, 2] - m[2, 0]) / s
+        z = (m[1, 0] - m[0, 1]) / s
+    elif (m[0, 0] > m[1, 1]) and (m[0, 0] > m[2, 2]):
+        s = 2.0 * np.sqrt(1.0 + m[0, 0] - m[1, 1] - m[2, 2])
+        w = (m[2, 1] - m[1, 2]) / s
+        x = 0.25 * s
+        y = (m[0, 1] + m[1, 0]) / s
+        z = (m[0, 2] + m[2, 0]) / s
+    elif m[1, 1] > m[2, 2]:
+        s = 2.0 * np.sqrt(1.0 + m[1, 1] - m[0, 0] - m[2, 2])
+        w = (m[0, 2] - m[2, 0]) / s
+        x = (m[0, 1] + m[1, 0]) / s
+        y = 0.25 * s
+        z = (m[1, 2] + m[2, 1]) / s
+    else:
+        s = 2.0 * np.sqrt(1.0 + m[2, 2] - m[0, 0] - m[1, 1])
+        w = (m[1, 0] - m[0, 1]) / s
+        x = (m[0, 2] + m[2, 0]) / s
+        y = (m[1, 2] + m[2, 1]) / s
+        z = 0.25 * s
+
+    return np.array([w, x, y, z])
 
 
 def quatToScaledAngleAxis(q: np.ndarray) -> np.ndarray:

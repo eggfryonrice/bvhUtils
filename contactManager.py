@@ -180,7 +180,7 @@ class contactManager:
                     d13 = (d12 + d23) * (1 - eps)
 
                 # for resulting p1H, p2H, p3,
-                # when we lay foot of perpendicular from`` p2H to p1H-p3,
+                # when we lay foot of perpendicular from p2H to p1H-p3,
                 # then distance from that point from p1H will be saved as d
                 d = (d13**2 - d23**2 + d12**2) / (2 * d13)
                 # put p2 into the plane made by p1H, p2, and p3
@@ -253,7 +253,6 @@ class contactManager:
             return (0, np.array([[]]), [], [])
 
         frame, jointsPosition, contact = self.dataFtn()
-        jointsPosition = jointsPosition @ self.transformation.T
         initialized = self.initializedByFirstData
         adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
 
@@ -263,8 +262,7 @@ class contactManager:
                 (adjustedJointsPosition[self.contactJoints[i]], (255, 0, 0))
             )
 
-        if not initialized:
-            jointsPosition = jointsPosition @ self.transformation.T
+        jointsPosition = jointsPosition @ self.transformation.T
 
         links = self.file.getLinks(jointsPosition)
         return (frame, jointsPosition, links, highlight)
@@ -291,8 +289,8 @@ class exampleDataFtn:
 
         translationData = (
             self.file.translationDatas[self.file.currentFrame]
-            + np.array([self.file.currentFrame * 0, 0, 0])
-            + (self.file.currentFrame > 45) * np.array([0, -10, 0])
+            + np.array([self.file.currentFrame * 1, 0, 0])
+            + (self.file.currentFrame > 45) * np.array([0, -0, 0])
         )
         eulerData = self.file.eulerDatas[self.file.currentFrame]
 
@@ -308,15 +306,18 @@ class exampleDataFtn:
 
 
 if __name__ == "__main__":
-    filePath = "example.bvh"
+    filePath = "dancing.bvh"
     file = BVHFile(filePath)
-    dataFtn = exampleDataFtn(file)
-    manager = contactManager(file)
-    manager.setDataFtn(dataFtn.ftn)
     scene = pygameScene(
         filePath, frameTime=1 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
     )
+
+    dataFtn = exampleDataFtn(file)
+    manager = contactManager(file)
+    manager.setDataFtn(dataFtn.ftn)
     scene.run(manager.updateScene)
 
-    dataFtn.file.currentFrame = 0
+    dataFtn = exampleDataFtn(file)
+    manager = contactManager(file)
+    manager.setDataFtn(dataFtn.ftn)
     scene.run(manager.updateSceneWithContactTrajectory)

@@ -125,7 +125,7 @@ class BVHFile:
         eulerData: np.ndarray,
         transformation: np.ndarray = np.eye(4),
     ) -> np.ndarray:
-        rotations = eulerToMat(eulerData, self.eulerOrder)
+        rotations = eulersToMats(eulerData, self.eulerOrder)
 
         jointsTransformation = np.zeros((self.numJoints, 4, 4))
         jointsTransformation[0] = translationMat(translationData)
@@ -156,7 +156,7 @@ class BVHFile:
             rootToJoint.append(self.childToParentDict[rootToJoint[-1]])
         rootToJoint.reverse()
 
-        rotations = eulerToMat(eulerData[rootToJoint], self.eulerOrder)
+        rotations = eulersToMats(eulerData[rootToJoint], self.eulerOrder)
 
         jointsTransformation = np.zeros((len(rootToJoint), 4, 4))
         jointsTransformation[0] = translationMat(translationData)
@@ -205,6 +205,13 @@ class BVHFile:
         list[tuple[np.ndarray, tuple[int, int, int]]],
     ]:
         jointsPosition = self.calculateJointsPositionFromFrame(self.currentFrame)
+
+        # translationData = np.zeros_like(self.translationDatas[0])
+        # eulerData = np.zeros_like(self.eulerDatas[0])
+        # jointsPosition = self.calculateJointsPositionFromData(
+        #     translationData, eulerData
+        # )
+
         links = self.getLinks(jointsPosition)
         currentData = (self.currentFrame, jointsPosition, links, [])
         self.currentFrame = (self.currentFrame + 1) % self.numFrames

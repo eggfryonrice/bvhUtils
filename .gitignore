@@ -6,6 +6,8 @@ tempCodeRunnerFile.py
 experiment.py
 *.bvh
 !example.bvh
+!dancing.bvh 
+!walking.bvh 
 note
 
 # below is basic python .gitignore file
