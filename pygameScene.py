@@ -283,7 +283,6 @@ class pygameScene:
         self.updateCameraCenter(jointsPositions)
 
         while self.running.value:
-            print(self.cameraRotationQuat, flush=True)
             self.handleInput()
             self.screen.fill((0, 0, 0))
             self.drawFloor()
