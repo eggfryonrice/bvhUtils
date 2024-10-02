@@ -16,8 +16,10 @@ class inertializationManager:
         file: BVHFile,
         dataFtn: Callable[[], inertializationManagerInput],
         halfLife: float = 0.15,
-        handleContact=True,
+        compare: bool = False,
+        handleContact: bool = True,
         contactJointNames=["LeftToe", "RightToe"],
+        contactHalfLife: float = 0.15,
         unlockRadius: float = 20,
         footHeight: float = 2,
         contactVelocityThreshold: float = 1,
@@ -42,14 +44,23 @@ class inertializationManager:
             [np.array([0, 0, 0]) for _ in range(self.file.numJoints)]
         )
 
+        self.compare = compare
+
         self.handleContact = handleContact
         self.previousJointsPositionExists = False
-        self.contactManager = contactManager(
+        self.contactManagerForAdjustedJoints = contactManager(
             self.file,
             contactJointNames=contactJointNames,
             unlockRadius=unlockRadius,
             footHeight=footHeight,
-            halfLife=self.halfLife,
+            halfLife=contactHalfLife,
+        )
+        self.contactManagerForOriginalJoints = contactManager(
+            self.file,
+            contactJointNames=contactJointNames,
+            unlockRadius=unlockRadius,
+            footHeight=footHeight,
+            halfLife=contactHalfLife,
         )
         self.contactVelocityThreshold = contactVelocityThreshold
 
@@ -167,27 +178,63 @@ class inertializationManager:
         return frame, jointsPosition
 
     def updateScene(self) -> sceneInput:
-        frame, jointsPosition = self.adjustJointsPosition()
+        jointsPositions = []
+        linkss = []
+
+        _, currTranslationData, currQuatData, _ = self.currentData
+        originalJointsPosition = self.file.calculateJointsPositionFromQuaternionData(
+            currTranslationData, currQuatData
+        )
+
+        frame, adjustedJointsPosition = self.adjustJointsPosition()
 
         if self.handleContact:
             if not self.previousJointsPositionExists:
-                self.previousJointsPosition = jointsPosition
+                self.previousJointsPosition = originalJointsPosition
                 self.previousJointsPositionExists = True
             contactJointVelocity = (
                 np.linalg.norm(
-                    jointsPosition[self.contactManager.contactJoints]
-                    - self.previousJointsPosition[self.contactManager.contactJoints],
+                    originalJointsPosition[
+                        self.contactManagerForAdjustedJoints.contactJoints
+                    ]
+                    - self.previousJointsPosition[
+                        self.contactManagerForAdjustedJoints.contactJoints
+                    ],
                     axis=1,
                 )
                 / self.file.frameTime
             )
-            self.previousJointsPosition = jointsPosition
-            jointsPosition = self.contactManager.adjustJointsPosition(
-                jointsPosition, contactJointVelocity < self.contactVelocityThreshold
+            self.previousJointsPosition = originalJointsPosition
+
+            adjustedJointsPosition = (
+                self.contactManagerForAdjustedJoints.adjustJointsPosition(
+                    adjustedJointsPosition,
+                    contactJointVelocity < self.contactVelocityThreshold,
+                )
             )
 
-        links = self.file.getLinks(jointsPosition)
-        return frame, [(jointsPosition, (255, 255, 255))], [(links, (255, 255, 255))]
+            if self.compare:
+                originalJointsPosition = (
+                    self.contactManagerForOriginalJoints.adjustJointsPosition(
+                        originalJointsPosition,
+                        contactJointVelocity < self.contactVelocityThreshold,
+                    )
+                )
+
+        if self.compare:
+            originalLinks = self.file.getLinks(originalJointsPosition)
+            jointsPositions.append((originalJointsPosition, (255, 255, 0)))
+            linkss.append((originalLinks, (255, 255, 0)))
+
+        adjustedLinks = self.file.getLinks(adjustedJointsPosition)
+        jointsPositions.append((adjustedJointsPosition, (255, 255, 255)))
+        linkss.append((adjustedLinks, (255, 255, 255)))
+
+        return (
+            frame,
+            jointsPositions,
+            linkss,
+        )
 
 
 class exampleDataFtn1:
@@ -312,7 +359,13 @@ if __name__ == "__main__":
 
     filePath = "example.bvh"
     file = BVHFile(filePath)
-    manager = inertializationManager(file, dataFtn.ftn, handleContact=False)
+    manager = inertializationManager(
+        file,
+        dataFtn.ftn,
+        halfLife=0.5,
+        handleContact=True,
+        compare=False,
+    )
     scene = pygameScene(
         filePath,
         frameTime=3 * file.frameTime,
