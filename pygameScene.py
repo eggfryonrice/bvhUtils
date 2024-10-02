@@ -53,7 +53,7 @@ class pygameScene:
         self,
         caption: str = "",
         frameTime: float = 1 / 60,
-        cameraRotation: np.ndarray = np.array([math.pi / 4, math.pi, 0.0]),
+        cameraRotationQuat: np.ndarray = np.array([1, 0, 0, 0]),
         width: int = 1600,
         height: int = 1200,
     ):
@@ -68,13 +68,13 @@ class pygameScene:
 
         # camera transformation info
         self.cameraDistance: int = 2000
-        self.cameraRotation: np.ndarray = cameraRotation
+        self.cameraRotationQuat: np.ndarray = cameraRotationQuat
         self.zoom: float = 2
 
         # input info for camera transformation
         self.mouseDragging: bool = False
         self.prevMousePosition: tuple[int, int] = (0, 0)
-        self.prevRotationAngle: np.ndarray = np.array([0, 0, 0])
+        self.prevRotationQuat: np.ndarray = self.cameraRotationQuat
 
         self.frameTime: float = frameTime
 
@@ -97,29 +97,25 @@ class pygameScene:
     # get projected location on the screen of 4d point
     def projection(self, points: np.ndarray) -> np.ndarray:
         cameraDistance = self.cameraDistance
-        rotationAngle = self.cameraRotation
         zoom = self.zoom
-
-        rotationX = rotationMatX3D(rotationAngle[0])
-        rotationY = rotationMatY3D(rotationAngle[1])
-        rotationZ = rotationMatZ3D(rotationAngle[2])
+        rotation = quatToMat(self.cameraRotationQuat)
 
         singlePoint = False
         if points.ndim == 1 and points.shape == (4,):
             points = points.reshape(1, 4)
             singlePoint = True
 
-        camera_center_broadcast = self.cameraCenter.reshape(1, 3)
-        cartesian_points = toCartesian(points) - camera_center_broadcast
+        cameraCenterBroadCast = self.cameraCenter.reshape(1, 3)
+        cartesianPoints = toProjective(toCartesian(points) - cameraCenterBroadCast)
 
-        rotated_points = np.einsum("ij,...j->...i", rotationX, cartesian_points)
-        rotated_points = np.einsum("ij,...j->...i", rotationY, rotated_points)
-        rotated_points = np.einsum("ij,...j->...i", rotationZ, rotated_points)
+        rotatedPoints = toCartesian(
+            np.einsum("ij,...j->...i", rotation, cartesianPoints)
+        )
 
-        factor = cameraDistance / (cameraDistance + rotated_points[..., 2])
+        factor = cameraDistance / (cameraDistance + rotatedPoints[..., 2])
 
-        x2d = rotated_points[..., 0] * factor * zoom + self.screen.get_rect()[2] // 2
-        y2d = -rotated_points[..., 1] * factor * zoom + self.screen.get_rect()[3] // 2
+        x2d = rotatedPoints[..., 0] * factor * zoom + self.screen.get_rect()[2] // 2
+        y2d = -rotatedPoints[..., 1] * factor * zoom + self.screen.get_rect()[3] // 2
 
         result = np.stack((x2d, y2d), axis=-1)
 
@@ -139,7 +135,7 @@ class pygameScene:
                 if event.button == 1:
                     if not self.mouseDragging:
                         self.prevMousePosition = pygame.mouse.get_pos()
-                        self.prevRotationAngle = self.cameraRotation.copy()
+                        self.prevRotationQuat = self.cameraRotationQuat.copy()
                     self.mouseDragging = True
 
             elif event.type == pygame.MOUSEBUTTONUP:
@@ -152,16 +148,24 @@ class pygameScene:
                 # camera rotates for pi in the oppposite direction
                 if self.mouseDragging:
                     mouseX, mouseY = pygame.mouse.get_pos()
-                    dx = mouseX - self.prevMousePosition[0]
+                    dx = self.prevMousePosition[0] - mouseX
                     dy = self.prevMousePosition[1] - mouseY
-                    self.cameraRotation[0] = (
-                        self.prevRotationAngle[0]
-                        + -1 * dy * math.pi / self.screen.get_rect()[3]
+
+                    cameraX = np.array([1, 0, 0])
+                    cameraY = np.array([0, 1, 0])
+                    self.cameraRotationQuat = multQuat(
+                        multQuat(
+                            axisAngleToQuat(
+                                cameraY, dx * math.pi / self.screen.get_rect()[2]
+                            ),
+                            axisAngleToQuat(
+                                cameraX, dy * math.pi / self.screen.get_rect()[3]
+                            ),
+                        ),
+                        self.prevRotationQuat,
                     )
-                    self.cameraRotation[1] = (
-                        self.prevRotationAngle[1]
-                        + -1 * dx * math.pi / self.screen.get_rect()[2]
-                    )
+                    self.prevMousePosition = (mouseX, mouseY)
+                    self.prevRotationQuat = self.cameraRotationQuat
 
             # mouse wheeel contribute to zoom in and zoom out
             elif event.type == pygame.MOUSEWHEEL:
@@ -331,7 +335,7 @@ class pygameScene:
         self.__init__(
             caption=self.caption,
             frameTime=self.frameTime,
-            cameraRotation=self.cameraRotation,
+            cameraRotationQuat=self.cameraRotationQuat,
             width=self.width,
             height=self.height,
         )

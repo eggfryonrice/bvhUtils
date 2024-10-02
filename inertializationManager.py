@@ -308,8 +308,7 @@ class exampleDataFtn3:
 if __name__ == "__main__":
     dataFtn = exampleDataFtn1("example.bvh")
     dataFtn = exampleDataFtn2("example.bvh")
-    dataFtn = exampleDataFtn3("walking.bvh", 363, "dancing.bvh", 128)
-    dataFtn = exampleDataFtn3("walking.bvh", 345, "dancing.bvh", 161)
+    dataFtn = exampleDataFtn3("walking.bvh", 241, "dancing.bvh", 99)
 
     filePath = "example.bvh"
     file = BVHFile(filePath)
@@ -317,6 +316,6 @@ if __name__ == "__main__":
     scene = pygameScene(
         filePath,
         frameTime=3 * file.frameTime,
-        cameraRotation=np.array([0, math.pi, 0]),
+        cameraRotationQuat=np.array([1, 0, 0, 0]),
     )
     scene.run(manager.updateScene)

@@ -196,6 +196,13 @@ def toProjective(p: np.ndarray) -> np.ndarray:
 
 
 # represent quaternion by np array with shape (4) with [w, x, y, z] values
+def axisAngleToQuat(v: np.ndarray, theta: float) -> np.ndarray:
+    sinTheta = math.sin(theta / 2)
+    cosTheta = math.cos(theta / 2)
+    axis = normalize(v) * sinTheta
+    return np.array([cosTheta, axis[0], axis[1], axis[2]])
+
+
 def quatX(theta: float) -> np.ndarray:
     return np.array([math.cos(theta / 2), math.sin(theta / 2), 0, 0])
 
@@ -283,7 +290,7 @@ def multQuats(q1: np.ndarray, q2: np.ndarray) -> np.ndarray:
     return np.concatenate([w, x, y, z], axis=-1)
 
 
-def EulerToQuat(eulerAngles: np.ndarray, order: str = "zyx") -> np.ndarray:
+def eulerToQuat(eulerAngles: np.ndarray, order: str = "zyx") -> np.ndarray:
     q = np.array([1.0, 0.0, 0.0, 0.0])
 
     for i, letter in enumerate(order):

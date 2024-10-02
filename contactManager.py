@@ -300,7 +300,9 @@ if __name__ == "__main__":
     filePath = "example.bvh"
     file = BVHFile(filePath)
     scene = pygameScene(
-        filePath, frameTime=1 * file.frameTime, cameraRotation=np.array([0, math.pi, 0])
+        filePath,
+        frameTime=1 * file.frameTime,
+        cameraRotationQuat=np.array([1, 0, 0, 0]),
     )
 
     dataFtn = exampleDataFtn(file)
