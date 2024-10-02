@@ -305,7 +305,7 @@ class exampleDataFtn3:
             jointsPosition1, jointsPosition2
         )
 
-        self.prepTime = 60
+        self.prepTime = 120
 
     def ftn(self) -> inertializationManagerInput:
         frame = self.currentFrame
@@ -364,11 +364,13 @@ if __name__ == "__main__":
         dataFtn.ftn,
         halfLife=0.5,
         handleContact=True,
-        compare=False,
+        compare=True,
     )
     scene = pygameScene(
         filePath,
-        frameTime=3 * file.frameTime,
-        cameraRotationQuat=np.array([1, 0, 0, 0]),
+        frameTime=1 * file.frameTime,
+        cameraRotationQuat=np.array(
+            [math.cos(-math.pi / 8), math.sin(-math.pi / 8), 0, 0]
+        ),
     )
     scene.run(manager.updateScene)

@@ -64,13 +64,10 @@ class contactJointHandler:
             self.positionOffset = self.position - inputPosition
             self.velocityOffset = self.velocity - inputVelocity
 
-            # detect sudden discontinuity
-            if (
-                np.linalg.norm(inputPosition - self.contactPoint)
-                > self.unlockRadius * 2
-            ):
-                self.positionOffset = np.array([0, 0, 0])
-                self.velocityOffset = np.array([0, 0, 0])
+        # detect sudden discontinuity
+        if np.linalg.norm(inputPosition - self.contactPoint) > self.unlockRadius * 2:
+            self.positionOffset = np.array([0, 0, 0])
+            self.velocityOffset = np.array([0, 0, 0])
 
         self.priorContactState = contactState
 
