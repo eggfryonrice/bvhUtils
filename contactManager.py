@@ -79,6 +79,8 @@ class contactJointHandler:
             targetPosition = inputPosition
             targetVelocity = inputVelocity
 
+        self.dampOffset()
+
         self.position = targetPosition + self.positionOffset
         self.velocity = targetVelocity + self.velocityOffset
 
@@ -220,6 +222,8 @@ class contactManager:
                 handledContactJointsPosition
             )
 
+            print(self.contactHandlers[0].positionOffset)
+
         return adjustedJointsPosition
 
     def updateScene(self) -> sceneInput:
@@ -284,7 +288,7 @@ class exampleDataFtn:
 
         translationData = (
             self.file.translationDatas[self.file.currentFrame]
-            + np.array([self.file.currentFrame * 0, 0, 0])
+            + np.array([self.file.currentFrame * 2, 0, 0])
             + (self.file.currentFrame > 45) * np.array([0, -0, 0])
         )
         eulerData = self.file.eulerDatas[self.file.currentFrame]

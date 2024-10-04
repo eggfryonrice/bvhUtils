@@ -46,14 +46,7 @@ class inertializationManager:
         self.compare = compare
 
         self.handleContact = handleContact
-        self.contactManagerForAdjustedJoints = contactManager(
-            self.file,
-            contactJointNames=contactJointNames,
-            unlockRadius=unlockRadius,
-            footHeight=footHeight,
-            halfLife=contactHalfLife,
-        )
-        self.contactManagerForOriginalJoints = contactManager(
+        self.contactManager = contactManager(
             self.file,
             contactJointNames=contactJointNames,
             unlockRadius=unlockRadius,
@@ -185,20 +178,14 @@ class inertializationManager:
         frame, adjustedJointsPosition = self.adjustJointsPosition()
 
         if self.handleContact:
-
-            adjustedJointsPosition = (
-                self.contactManagerForAdjustedJoints.adjustJointsPosition(
-                    adjustedJointsPosition,
-                    contact,
-                )
+            adjustedJointsPosition = self.contactManager.adjustJointsPosition(
+                adjustedJointsPosition,
+                contact,
             )
 
             if self.compare:
                 originalJointsPosition = (
-                    self.contactManagerForOriginalJoints.adjustJointsPosition(
-                        originalJointsPosition,
-                        contact,
-                    )
+                    originalJointsPosition @ self.contactManager.transformation.T
                 )
 
         if self.compare:
