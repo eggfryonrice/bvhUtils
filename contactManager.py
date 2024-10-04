@@ -264,7 +264,7 @@ class contactManager:
 
 
 class exampleDataFtn:
-    def __init__(self, file: BVHFile, contactVelocityThreshold: float = 1):
+    def __init__(self, file: BVHFile, contactVelocityThreshold: float = 30):
         self.file: BVHFile = file
         self.contactVelocityThreshold = contactVelocityThreshold
 
@@ -279,13 +279,13 @@ class exampleDataFtn:
         currentPosition = toCartesian(
             self.file.calculateJointsPositionFromFrame(self.file.currentFrame)[[4, 9]]
         )
-        velocity = currentPosition - prevPosition
+        velocity = (currentPosition - prevPosition) / self.file.frameTime
         speed = np.linalg.norm(velocity, axis=1)
 
         translationData = (
             self.file.translationDatas[self.file.currentFrame]
             + np.array([self.file.currentFrame * 0, 0, 0])
-            + (self.file.currentFrame > 45) * np.array([0, -30, 0])
+            + (self.file.currentFrame > 45) * np.array([0, -0, 0])
         )
         eulerData = self.file.eulerDatas[self.file.currentFrame]
 

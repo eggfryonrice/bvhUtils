@@ -483,6 +483,7 @@ def scaledAngleAxisesToQuats(v: np.ndarray) -> np.ndarray:
     return quats
 
 
+# issue: doesn't work if two joint orientations are not close enough
 def computeTransformationFromPointsPair(
     A: np.ndarray, B: np.ndarray, w: Optional[np.ndarray] = None
 ) -> np.ndarray:
@@ -506,37 +507,3 @@ def computeTransformationFromPointsPair(
     transformation = translationMat(np.array([x0, 0, z0])) @ rotationMatY(theta)
 
     return transformation
-
-
-def computeRootTranslationFromPointsPair(
-    A: np.ndarray, B: np.ndarray, w: Optional[np.ndarray] = None
-) -> np.ndarray:
-    if w is None:
-        w = np.array([1.0 for _ in range(A.shape[0])])
-
-    Ax, Az, Bx, Bz = A[:, 0], A[:, 2], B[:, 0], B[:, 2]
-    AxBar, AzBar, BxBar, BzBar = sum(w * Ax), sum(w * Az), sum(w * Bx), sum(w * Bz)
-
-    x0 = (AxBar - BxBar) / w.sum()
-    z0 = (AzBar - BzBar) / w.sum()
-
-    return np.array([x0, 0, z0])
-
-
-def computeRootRotationFromPointsPair(
-    A: np.ndarray, B: np.ndarray, w: Optional[np.ndarray] = None
-) -> np.ndarray:
-    if w is None:
-        w = np.array([1.0 for _ in range(A.shape[0])])
-
-    Ax, Az, Bx, Bz = A[:, 0], A[:, 2], B[:, 0], B[:, 2]
-    AxBar, AzBar, BxBar, BzBar = sum(w * Ax), sum(w * Az), sum(w * Bx), sum(w * Bz)
-
-    # equation 2 of motion graph
-    upleft = (w * (Ax * Bz - Bx * Az)).sum()
-    upright = (AxBar * BzBar - BxBar * AzBar) / w.sum()
-    downleft = (w * (Ax * Bx + Az * Bz)).sum()
-    downright = (AxBar * BxBar + AzBar * BzBar) / w.sum()
-    theta = math.atan((upleft - upright) / (downleft - downright))
-
-    return rotationMatY(theta)

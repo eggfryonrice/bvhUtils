@@ -6,8 +6,8 @@ from pygameScene import pygameScene, sceneInput
 from contactManager import contactManager
 from transformationUtil import *
 
-# frame, translationData, eulerData, discontinuity flag
-inertializationManagerInput = tuple[int, np.ndarray, np.ndarray, bool]
+# frame, translationData, eulerData, contactState, discontinuity flag
+inertializationManagerInput = tuple[int, np.ndarray, np.ndarray, np.ndarray, bool]
 
 
 class inertializationManager:
@@ -22,7 +22,6 @@ class inertializationManager:
         contactHalfLife: float = 0.15,
         unlockRadius: float = 20,
         footHeight: float = 2,
-        contactVelocityThreshold: float = 1,
     ):
         self.file: BVHFile = file
 
@@ -47,7 +46,6 @@ class inertializationManager:
         self.compare = compare
 
         self.handleContact = handleContact
-        self.previousJointsPositionExists = False
         self.contactManagerForAdjustedJoints = contactManager(
             self.file,
             contactJointNames=contactJointNames,
@@ -62,7 +60,6 @@ class inertializationManager:
             footHeight=footHeight,
             halfLife=contactHalfLife,
         )
-        self.contactVelocityThreshold = contactVelocityThreshold
 
     def dampOffsets(self):
         y = 2 * 0.6931 / self.halfLife
@@ -92,7 +89,7 @@ class inertializationManager:
     # where first 3 is motion before discontinuity at frame 3,
     # and second 3 is motion after discontinuity at frame 3
     def adjustJointsPosition(self) -> tuple[int, np.ndarray]:
-        frame, currTranslationData, currQuatData, discontinuity = self.currentData
+        frame, currTranslationData, currQuatData, _, discontinuity = self.currentData
 
         self.dampOffsets()
         translationData = currTranslationData + self.translationOffset
@@ -110,10 +107,10 @@ class inertializationManager:
 
         # on discontinuity, we need information for two frames prior to discontinuity,
         # two frames after discontinuity
-        _, prevTranslationData, prevQuatData, _ = self.previousData
-        frame, nextTranslationData, nextQuatData, _ = self.nextData
+        _, prevTranslationData, prevQuatData, _, _ = self.previousData
+        frame, nextTranslationData, nextQuatData, _, _ = self.nextData
         nnextData = self.dataFtn()
-        _, nnextTranslationData, nnextQuatData, _ = nnextData
+        _, nnextTranslationData, nnextQuatData, _, _ = nnextData
 
         # calculate current source root Position and velocity,
         # joints quat and quatVelocity
@@ -180,8 +177,7 @@ class inertializationManager:
     def updateScene(self) -> sceneInput:
         jointsPositions = []
         linkss = []
-
-        _, currTranslationData, currQuatData, _ = self.currentData
+        _, currTranslationData, currQuatData, contact, discontinuity = self.currentData
         originalJointsPosition = self.file.calculateJointsPositionFromQuaternionData(
             currTranslationData, currQuatData
         )
@@ -189,27 +185,11 @@ class inertializationManager:
         frame, adjustedJointsPosition = self.adjustJointsPosition()
 
         if self.handleContact:
-            if not self.previousJointsPositionExists:
-                self.previousJointsPosition = originalJointsPosition
-                self.previousJointsPositionExists = True
-            contactJointVelocity = (
-                np.linalg.norm(
-                    originalJointsPosition[
-                        self.contactManagerForAdjustedJoints.contactJoints
-                    ]
-                    - self.previousJointsPosition[
-                        self.contactManagerForAdjustedJoints.contactJoints
-                    ],
-                    axis=1,
-                )
-                / self.file.frameTime
-            )
-            self.previousJointsPosition = originalJointsPosition
 
             adjustedJointsPosition = (
                 self.contactManagerForAdjustedJoints.adjustJointsPosition(
                     adjustedJointsPosition,
-                    contactJointVelocity < self.contactVelocityThreshold,
+                    contact,
                 )
             )
 
@@ -217,7 +197,7 @@ class inertializationManager:
                 originalJointsPosition = (
                     self.contactManagerForOriginalJoints.adjustJointsPosition(
                         originalJointsPosition,
-                        contactJointVelocity < self.contactVelocityThreshold,
+                        contact,
                     )
                 )
 
@@ -259,10 +239,24 @@ class exampleDataFtn1:
             self.file.currentFrame = 0
             self.translation = self.translation + self.startEndTranslation
 
+        c1 = (
+            self.file.getJointVelocity(
+                self.file.jointNames.index("LeftToe"), self.file.currentFrame
+            )
+            < 30
+        )
+        c2 = (
+            self.file.getJointVelocity(
+                self.file.jointNames.index("RightToe"), self.file.currentFrame
+            )
+            < 30
+        )
+
         return (
             self.file.currentFrame,
             (self.file.translationDatas[self.file.currentFrame] + self.translation),
             eulersToQuats(self.file.eulerDatas[self.file.currentFrame]),
+            np.array([c1, c2]),
             ((self.file.currentFrame == self.file.numFrames - 1)),
         )
 
@@ -276,6 +270,19 @@ class exampleDataFtn2:
         self.file.currentFrame += 1
         if self.file.currentFrame >= self.file.numFrames:
             self.file.currentFrame = 0
+
+        c1 = (
+            self.file.getJointVelocity(
+                self.file.jointNames.index("LeftToe"), self.file.currentFrame
+            )
+            < 30
+        )
+        c2 = (
+            self.file.getJointVelocity(
+                self.file.jointNames.index("RightToe"), self.file.currentFrame
+            )
+            < 30
+        )
         return (
             self.file.currentFrame,
             (
@@ -283,6 +290,7 @@ class exampleDataFtn2:
                 + (self.file.currentFrame > 45) * np.array([0, -30, 0])
             ),
             eulersToQuats(self.file.eulerDatas[self.file.currentFrame]),
+            np.array([c1, c2]),
             (self.file.currentFrame == 45),
         )
 
@@ -310,20 +318,42 @@ class exampleDataFtn3:
     def ftn(self) -> inertializationManagerInput:
         frame = self.currentFrame
         if self.beforeDiscontinuity:
-            if self.file1Frame - self.prepTime < 0:
+            if self.file1Frame - self.prepTime + self.currentFrame < 0:
                 self.currentFrame = self.prepTime - self.file1Frame
+                frame = self.currentFrame
             translationData = self.file1.translationDatas[
-                self.file1Frame - self.prepTime + self.currentFrame
+                self.file1Frame - self.prepTime + frame
             ]
-            eulerData = self.file1.eulerDatas[
-                self.file1Frame - self.prepTime + self.currentFrame
-            ]
+            eulerData = self.file1.eulerDatas[self.file1Frame - self.prepTime + frame]
             quatData = eulersToQuats(eulerData)
-            if self.currentFrame == self.prepTime:
+
+            c1 = (
+                self.file1.getJointVelocity(
+                    self.file1.jointNames.index("LeftToe"),
+                    self.file1Frame - self.prepTime + frame,
+                )
+                < 30
+            )
+            c2 = (
+                self.file1.getJointVelocity(
+                    self.file1.jointNames.index("RightToe"),
+                    self.file1Frame - self.prepTime + frame,
+                )
+                < 30
+            )
+            contact = np.array([c1, c2])
+
+            if frame == self.prepTime:
                 self.beforeDiscontinuity = False
-                return (frame, translationData, quatData, True)
+                return (
+                    frame,
+                    translationData,
+                    quatData,
+                    contact,
+                    True,
+                )
             self.currentFrame += 1
-            return (frame, translationData, quatData, False)
+            return (frame, translationData, quatData, contact, False)
         else:
             if (self.currentFrame > self.prepTime * 2) or (
                 self.file2Frame - self.prepTime + self.currentFrame
@@ -348,8 +378,25 @@ class exampleDataFtn3:
                 matToQuat(self.afterDiscontinuityTransformation), quatData[0]
             )
 
+            c1 = (
+                self.file2.getJointVelocity(
+                    self.file2.jointNames.index("LeftToe"),
+                    self.file2Frame - self.prepTime + self.currentFrame,
+                )
+                < 30
+            )
+            c2 = (
+                self.file2.getJointVelocity(
+                    self.file2.jointNames.index("RightToe"),
+                    self.file2Frame - self.prepTime + self.currentFrame,
+                )
+                < 30
+            )
+
+            contact = np.array([c1, c2])
+
             self.currentFrame += 1
-            return (frame, translationData, quatData, False)
+            return (frame, translationData, quatData, contact, False)
 
 
 if __name__ == "__main__":
@@ -362,13 +409,13 @@ if __name__ == "__main__":
     manager = inertializationManager(
         file,
         dataFtn.ftn,
-        halfLife=0.5,
+        halfLife=0.15,
         handleContact=True,
         compare=True,
     )
     scene = pygameScene(
         filePath,
-        frameTime=1 * file.frameTime,
+        frameTime=file.frameTime,
         cameraRotationQuat=np.array(
             [math.cos(-math.pi / 8), math.sin(-math.pi / 8), 0, 0]
         ),

@@ -222,6 +222,25 @@ class BVHFile:
 
         return transformation @ jointPosition
 
+    def getJointVelocity(self, idx: int, frame: int) -> float:
+        currJointPosition = self.calculateJointPositionFromData(
+            idx, self.translationDatas[frame], self.eulerDatas[frame]
+        )
+        if frame == 0:
+            compJointPosition = self.calculateJointPositionFromData(
+                idx, self.translationDatas[1], self.eulerDatas[1]
+            )
+        else:
+            compJointPosition = self.calculateJointPositionFromData(
+                idx, self.translationDatas[frame - 1], self.eulerDatas[frame - 1]
+            )
+        return float(
+            np.linalg.norm(
+                toCartesian(compJointPosition) - toCartesian(currJointPosition)
+            )
+            / self.frameTime
+        )
+
     # return frame, joint, link information
     def updateSceneWithNextFrame(self) -> sceneInput:
         jointsPosition = self.calculateJointsPositionFromFrame(self.currentFrame)
@@ -247,7 +266,7 @@ class BVHFile:
 
 
 if __name__ == "__main__":
-    filePath = "dancing.bvh"
+    filePath = "example.bvh"
     file = BVHFile(filePath)
     file.calculateJointsPositionFromFrame(0)
     scene = pygameScene(filePath, frameTime=file.frameTime)
