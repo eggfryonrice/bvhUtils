@@ -498,7 +498,7 @@ def computeTransformationFromPointsPair(
     upright = (AxBar * BzBar - BxBar * AzBar) / w.sum()
     downleft = (w * (Ax * Bx + Az * Bz)).sum()
     downright = (AxBar * BxBar + AzBar * BzBar) / w.sum()
-    theta = math.atan((upleft - upright) / (downleft - downright))
+    theta = math.atan2((upleft - upright), (downleft - downright))
 
     # equation 3, 4 of motion graph
     x0 = (AxBar - BxBar * math.cos(theta) - BzBar * math.sin(theta)) / w.sum()
