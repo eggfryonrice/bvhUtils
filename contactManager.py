@@ -222,8 +222,6 @@ class contactManager:
                 handledContactJointsPosition
             )
 
-            print(self.contactHandlers[0].positionOffset)
-
         return adjustedJointsPosition
 
     def updateScene(self) -> sceneInput:

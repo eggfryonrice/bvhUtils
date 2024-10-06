@@ -118,6 +118,32 @@ class BVHFile:
 
         return jointsPosition @ transformation.T
 
+    def calculateJointPositionFromFrame(
+        self, jointIdx: int, frame: int, transformation: np.ndarray = np.eye(4)
+    ) -> np.ndarray:
+        rootToJoint: list[int] = [jointIdx]
+        while rootToJoint[-1] != 0:
+            rootToJoint.append(self.childToParentDict[rootToJoint[-1]])
+        rootToJoint.reverse()
+
+        translationData = self.translationDatas[frame]
+        eulerData = self.eulerDatas[frame]
+
+        rotations = eulersToMats(eulerData[rootToJoint], self.eulerOrder)
+
+        jointsTransformation = np.zeros((len(rootToJoint), 4, 4))
+        jointsTransformation[0] = translationMat(translationData)
+
+        for i in range(1, len(rootToJoint)):
+            jointsTransformation[i] = (
+                jointsTransformation[i - 1]
+                @ self.jointOffsetShifts[self.childToParentDict[rootToJoint[i]]]
+                @ rotations[i - 1]
+            )
+        jointPosition = jointsTransformation[-1] @ self.jointOffsets[jointIdx]
+
+        return transformation @ jointPosition
+
     # calcualte position of all joints by given data
     def calculateJointsPositionFromData(
         self,
