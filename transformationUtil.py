@@ -153,6 +153,30 @@ def eulerToMat(eulerAngle: np.ndarray, order: str = "zyx") -> np.ndarray:
     return matrix
 
 
+# here, orders means order of rotation channels in bvh file
+# if order is 'zyx', euler data consists of [z, y, x] rotation,
+# and we rotate by xaxis, yaxis, and then z axis
+def matToEuler(matrix: np.ndarray, order: str = "zyx") -> np.ndarray:
+    assert order in ["zyx"], "Unsupported order"
+
+    if order == "zyx":
+        sy = math.sqrt(matrix[0, 0] * matrix[0, 0] + matrix[1, 0] * matrix[1, 0])
+        singular = sy < 1e-6
+
+        if not singular:
+            x = math.atan2(matrix[2, 1], matrix[2, 2])
+            y = math.atan2(-matrix[2, 0], sy)
+            z = math.atan2(matrix[1, 0], matrix[0, 0])
+        else:
+            x = math.atan2(-matrix[1, 2], matrix[1, 1])
+            y = math.atan2(-matrix[2, 0], sy)
+            z = 0
+
+        return np.array([z, y, x])
+
+    raise NotImplementedError("Only 'zyx' order is implemented for now..")
+
+
 def eulersToMats(eulerAngles: np.ndarray, order: str = "zyx") -> np.ndarray:
     matrices = np.eye(4).reshape(1, 4, 4).repeat(eulerAngles.shape[0], axis=0)
 

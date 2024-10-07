@@ -1,8 +1,8 @@
 import pygame
-from pygame.locals import *
-from OpenGL.GL import *
-from OpenGL.GLUT import *
-from OpenGL.GLU import *
+from pygame.locals import *  # type: ignore
+from OpenGL.GL import *  # type: ignore
+from OpenGL.GLU import *  # type: ignore
+from OpenGL.GLUT import *  # type: ignore
 import numpy as np
 import math
 
@@ -27,12 +27,12 @@ class pygameScene:
     def __init__(
         self,
         frameTime: float = 0.033,
-        cameraAngleX=math.pi / 4,
-        cameraAngleY=-math.pi / 2,
-        width=2560,
-        height=1600,
-        sphereRadius=4,
-        cuboidWidth=5,
+        cameraAngleX: float = math.pi / 4,
+        cameraAngleY: float = -math.pi / 2,
+        width: int = 1600,
+        height: int = 900,
+        sphereRadius: float = 3,
+        cuboidWidth: float = 4,
     ):
         pygame.init()
         self.running = True
@@ -49,8 +49,8 @@ class pygameScene:
         self.initLighting()
         self.lightPosition = [0, 1000, 0, 0]
 
-        self.sphereRadius = sphereRadius
-        self.cuboidWidth = cuboidWidth
+        self.sphereRadius: float = sphereRadius
+        self.cuboidWidth: float = cuboidWidth
 
         # Camera parameters
         self.cameraCenter: np.ndarray = np.array([0, 0, 0])
@@ -123,7 +123,8 @@ class pygameScene:
                     xrot = (mouseY - self.prevMousePosition[1]) * math.pi / self.height
                     yrot = (mouseX - self.prevMousePosition[0]) * math.pi / self.width
                     self.cameraAngleX = max(
-                        -math.pi / 2, min(math.pi / 2, self.cameraAngleX + xrot)
+                        -math.pi / 2 + 1e-8,
+                        min(math.pi / 2 - 1e-8, self.cameraAngleX + xrot),
                     )
                     self.cameraAngleY = self.cameraAngleY + yrot
 
@@ -160,12 +161,18 @@ class pygameScene:
         glutSolidSphere(self.sphereRadius, 20, 20)
         glPopMatrix()
 
-    def drawCuboid(self, start_pos, end_pos, rotationQuat, color=(1.0, 0.5, 0.5)):
+    def drawCuboid(
+        self,
+        start_pos: np.ndarray,
+        end_pos: np.ndarray,
+        rotationQuat: np.ndarray,
+        color: tuple[float, float, float] = (1.0, 0.5, 0.5),
+    ):
         glPushMatrix()
 
         mid_point = (start_pos + end_pos) / 2
         direction = end_pos - start_pos
-        length = max(np.linalg.norm(direction) - 2 * self.sphereRadius, 0)
+        length = max(float(np.linalg.norm(direction) - 2 * self.sphereRadius), 0.0)
 
         glTranslatef(mid_point[0], mid_point[1], mid_point[2])
 

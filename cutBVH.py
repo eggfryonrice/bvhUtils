@@ -6,7 +6,9 @@ from pygameScene import pygameScene
 from createBVH import createBVH
 
 
-# for designated bvh file, split bvh file from time1 to time2, and write it in newFileName
+# for designated bvh file,
+# split bvh file from time1 to time2,
+# and write it in newFileName
 def cutBVH(filePath: str, newFilePath: str, t1: float, t2: float):
     file: BVHFile = BVHFile(filePath)
     startFrame: int = int(t1 / file.frameTime)

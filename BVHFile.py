@@ -15,6 +15,7 @@ class BVHFile:
 
         translationDatas: list[list[float]] = []
         eulerDatas: list[list[list[float]]] = []
+        # here, order means order of rotation channels in bvh file
         self.eulerOrder: str = ""
         self.numFrames: int = 0
         self.frameTime: float = 1.0
