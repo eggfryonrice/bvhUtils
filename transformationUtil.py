@@ -254,6 +254,28 @@ def quatZs(angles: np.ndarray) -> np.ndarray:
     )
 
 
+def vecToVecQuat(fromV: np.ndarray, toV: np.ndarray):
+    fV = normalize(fromV)
+    tV = normalize(toV)
+    axis = np.cross(fV, tV)
+    dot = np.dot(fV, tV)
+
+    if np.isclose(dot, 1):
+        return np.array([1, 0, 0, 0])
+    elif np.isclose(dot, -1):
+        extraV = (
+            np.array([1.0, 0.0, 0.0])
+            if not np.isclose(fV[0], 1.0)
+            else np.array([0.0, 1.0, 0.0])
+        )
+        axis = np.cross(fV, extraV)
+        return axisAngleToQuat(axis, math.pi)
+
+    angle = np.arccos(dot)
+    axis = normalize(axis)
+    return axisAngleToQuat(axis, angle)
+
+
 def invQuat(q: np.ndarray) -> np.ndarray:
     invQ = q.copy()
     invQ[0] = -invQ[0]

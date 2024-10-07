@@ -81,22 +81,19 @@ class inertializationManager:
     # 1, 2, 3, 3, 4, 5, ....
     # where first 3 is motion before discontinuity at frame 3,
     # and second 3 is motion after discontinuity at frame 3
-    def adjustJointsPosition(self) -> tuple[int, np.ndarray]:
+    def manageInertialization(self) -> tuple[int, np.ndarray, np.ndarray]:
         frame, currTranslationData, currQuatData, _, discontinuity = self.currentData
 
         self.dampOffsets()
         translationData = currTranslationData + self.translationOffset
         quatData = multQuats(self.jointsQuatOffset, currQuatData)
-        jointsPosition = self.file.calculateJointsPositionFromQuaternionData(
-            translationData, quatData
-        )
 
         # in normal case, return offset considered joint position
         if not discontinuity:
             self.previousData = self.currentData
             self.currentData = self.nextData
             self.nextData = self.dataFtn()
-            return frame, jointsPosition
+            return frame, translationData, quatData
 
         # on discontinuity, we need information for two frames prior to discontinuity,
         # two frames after discontinuity
@@ -127,12 +124,12 @@ class inertializationManager:
         # calculate next source root Position and velocity,
         # joints quat and quatVelocity
         nextRootPosition = toCartesian(
-            self.file.calculateJointPositionFromData(
+            self.file.calculateJointPositionFromEulerData(
                 0, nextTranslationData, nextQuatData
             )
         )
         nnextRootPosition = toCartesian(
-            self.file.calculateJointPositionFromData(
+            self.file.calculateJointPositionFromEulerData(
                 0, nnextTranslationData, nnextQuatData
             )
         )
@@ -165,37 +162,37 @@ class inertializationManager:
         self.previousData = self.nextData
         self.currentData = nnextData
         self.nextData = self.dataFtn()
-        return frame, jointsPosition
+        return frame, translationData, quatData
 
-    def updateScene(self) -> sceneInput:
+    def getNextSceneInput(self) -> sceneInput:
         jointsPositions = []
         linkss = []
-        _, currTranslationData, currQuatData, contact, discontinuity = self.currentData
-        originalJointsPosition = self.file.calculateJointsPositionFromQuaternionData(
-            currTranslationData, currQuatData
-        )
-
-        frame, adjustedJointsPosition = self.adjustJointsPosition()
+        _, currTranslationData, currQuatData, contact, _ = self.currentData
+        frame, translationData, quatData = self.manageInertialization()
 
         if self.handleContact:
-            adjustedJointsPosition = self.contactManager.adjustJointsPosition(
-                adjustedJointsPosition,
-                contact,
+            adjustedTranslation, adjustedQuat = self.contactManager.manageContact(
+                (translationData, quatData, contact)
             )
 
-            if self.compare:
-                originalJointsPosition = (
-                    originalJointsPosition @ self.contactManager.transformation.T
-                )
+        adjustedJointsPosition, adjustedLinks = (
+            self.file.calculateJointsPositionAndLinksFromQuaternionData(
+                adjustedTranslation, adjustedQuat
+            )
+        )
+        jointsPositions.append((adjustedJointsPosition, (1.0, 0.5, 0.5)))
+        linkss.append((adjustedLinks, (0.5, 0.5, 1.0)))
 
         if self.compare:
-            originalLinks = self.file.getLinks(originalJointsPosition)
-            jointsPositions.append((originalJointsPosition, (255, 255, 0)))
-            linkss.append((originalLinks, (255, 255, 0)))
-
-        adjustedLinks = self.file.getLinks(adjustedJointsPosition)
-        jointsPositions.append((adjustedJointsPosition, (255, 255, 255)))
-        linkss.append((adjustedLinks, (255, 255, 255)))
+            originalTranslation = currTranslationData + self.contactManager.translation
+            originalQuat = currQuatData
+            originalJointsPosition, originalLinks = (
+                self.file.calculateJointsPositionAndLinksFromQuaternionData(
+                    originalTranslation, originalQuat
+                )
+            )
+            jointsPositions.append((originalJointsPosition, (1.0, 0.0, 0.0)))
+            linkss.append((originalLinks, (1.0, 0.0, 0.0)))
 
         return (
             frame,
@@ -398,13 +395,10 @@ if __name__ == "__main__":
         dataFtn.ftn,
         halfLife=0.15,
         handleContact=True,
-        compare=True,
+        compare=False,
     )
     scene = pygameScene(
-        filePath,
         frameTime=file.frameTime,
-        cameraRotationQuat=np.array(
-            [math.cos(-math.pi / 8), math.sin(-math.pi / 8), 0, 0]
-        ),
     )
-    scene.run(manager.updateScene)
+    while scene.running:
+        scene.updateScene(manager.getNextSceneInput())

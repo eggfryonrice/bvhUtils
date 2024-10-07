@@ -5,6 +5,9 @@ from BVHFile import BVHFile
 from pygameScene import pygameScene, sceneInput
 from transformationUtil import *
 
+# translationData, quaternionData, contact
+contactManagerInput = tuple[np.ndarray, np.ndarray, np.ndarray]
+
 
 class contactJointHandler:
     def __init__(
@@ -95,7 +98,7 @@ class contactManager:
         file: BVHFile,
         contactJointNames=["LeftToe", "RightToe"],
         unlockRadius: float = 20,
-        footHeight: float = 2,
+        footHeight: float = 0,
         halfLife: float = 0.15,
     ):
         self.file: BVHFile = file
@@ -112,9 +115,7 @@ class contactManager:
         ]
         self.contactJointsEndSite = [jointIdx + 1 for jointIdx in self.contactJoints]
 
-        self.transformation = np.eye(4)
-
-        self.dataFtn: Optional[Callable[[], tuple[int, np.ndarray, np.ndarray]]] = None
+        self.translation = np.array([0, 0, 0])
 
         self.unlockRadius = unlockRadius
         self.footHeight = footHeight
@@ -122,17 +123,13 @@ class contactManager:
 
         self.initializedByFirstData = False
 
-    def setDataFtn(self, ftn: Callable[[], tuple[int, np.ndarray, np.ndarray]]):
-        self.dataFtn = ftn
-
     # given position of joints, find joint with lowest y value
     # then transform the animation so that lowest joint globally has footHeight as height
     def adjustHeight(self, jointsPosition: np.ndarray):
         jointsHeight = jointsPosition[:, 1] / jointsPosition[:, 3]
         lowestJointHeight = np.min(jointsHeight)
-        self.transformation = (
-            translationMat(np.array([0, self.footHeight - lowestJointHeight, 0]))
-            @ self.transformation
+        self.translation = (
+            np.array([0, self.footHeight - lowestJointHeight, 0]) + self.translation
         )
 
     def initializeHandlers(self, jointsPosition: np.ndarray):
@@ -147,8 +144,11 @@ class contactManager:
             )
             self.contactHandlers.append(handler)
 
-    def adjustJointsPosition(self, jointsPosition: np.ndarray, contact: np.ndarray):
-        jointsPosition = jointsPosition @ self.transformation.T
+    def manageContact(self, inputData: contactManagerInput):
+        translationData, quaternionData, contact = inputData
+        jointsPosition = self.file.calculateJointsPositionFromQuaternionData(
+            translationData + self.translation, quaternionData
+        )
 
         if not self.initializedByFirstData:
             # move character so that feet is on the ground
@@ -158,111 +158,112 @@ class contactManager:
             # marked that class is now initialized
             self.initializedByFirstData = True
             # initial position is character moved to the ground
-            adjustedJointsPosition = jointsPosition @ self.transformation.T
-        else:
-            # calculate where contact joint should move by contact handler
-            handledContactJointsPosition = np.zeros((len(self.contactJoints), 4))
-            handledContactJointsPositionP1 = np.zeros((len(self.contactJoints), 4))
-            handledContactJointsPositionP2 = np.zeros((len(self.contactJoints), 4))
-            for i in range(len(self.contactJoints)):
-                # get toe position by contact handler
-                p0 = toCartesian(jointsPosition[self.contactJoints[i]])
-                p0H = self.contactHandlers[i].handleContact(p0, contact[i])
+            adjustedTranslationData = translationData + self.translation
+            return adjustedTranslationData, quaternionData
 
-                p1 = toCartesian(jointsPosition[self.contactJointsP1[i]])
-                p1H = p1 + p0H - p0
-                p2 = toCartesian(jointsPosition[self.contactJointsP2[i]])
-                p3 = toCartesian(jointsPosition[self.contactJointsP3[i]])
+        adjustedTranslationData = translationData + self.translation
+        adjustedQuaternionData = quaternionData.copy()
 
-                d12 = np.linalg.norm(p2 - p1)
-                d23 = np.linalg.norm(p3 - p2)
-                d13 = np.linalg.norm(p3 - p1H)
-                # handle when contact point is further then leg lenth
-                eps = 1e-2
-                if d13 >= (d12 + d23) * (1 - eps):
-                    p1H = p3 + (p1H - p3) / d13 * (d12 + d23) * (1 - eps)
-                    p0H = p1H + p0 - p1
-                    d13 = (d12 + d23) * (1 - eps)
-
-                # for resulting p1H, p2H, p3,
-                # when we lay foot of perpendicular from p2H to p1H-p3,
-                # then distance from that point from p1H will be saved as d
-                d = (d13**2 - d23**2 + d12**2) / (2 * d13)
-                # put p2 into the plane with plane vector p3-p1 and p2Dirction
-                # we first move to appropriate point over p3-p1H
-                # then we move p2H along the plane
-                p2H = p1H + normalize(p3 - p1H) * d
-                # we take p2 Direciton this way:
-                p2Direction1 = orthogonalComponent(p3 - p1H, p2 - p3)
-                p2Direction2 = orthogonalComponent(p3 - p1H, p0 - p1)
-                p2Direction = p2Direction1 * 2 + p2Direction2
-                n = np.cross((p3 - p1H), p2Direction)
-                n = np.cross(n, (p3 - p1H))
-                n = normalize(n)
-                p2H = p2H + n * ((d12**2 - d**2) ** 0.5)
-                # ensure knee doesn't go back
-                originalCross = np.cross(p3 - p2, p2 - p1)
-                newCross = np.cross(p3 - p2H, p2H - p1H)
-                if np.dot(originalCross, newCross) < 0:
-                    p2H = p2H - 2 * n * ((d12**2 - d**2) ** 0.5)
-
-                handledContactJointsPosition[i, :] = toProjective(p0H)
-                handledContactJointsPositionP1[i, :] = toProjective(p1H)
-                handledContactJointsPositionP2[i, :] = toProjective(p2H)
-
-            adjustedJointsPosition = jointsPosition.copy()
-            adjustedJointsPosition[self.contactJoints] = handledContactJointsPosition
-            adjustedJointsPosition[self.contactJointsP1] = (
-                handledContactJointsPositionP1
-            )
-            adjustedJointsPosition[self.contactJointsP2] = (
-                handledContactJointsPositionP2
-            )
-            adjustedJointsPosition[self.contactJointsEndSite] = (
-                handledContactJointsPosition
-            )
-
-        return adjustedJointsPosition
-
-    def updateScene(self) -> sceneInput:
-        if self.dataFtn == None:
-            print("assign appropriate data function to run contact manager")
-            return (0, [], [])
-        frame, jointsPosition, contact = self.dataFtn()
-        adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
-
-        highlight = []
+        # calculate where contact joint should move by contact handler
         for i in range(len(self.contactJoints)):
-            if contact[i]:
-                highlight.append(adjustedJointsPosition[self.contactJoints[i]])
+            p0Idx = self.contactJoints[i]
+            p1Idx = self.contactJointsP1[i]
+            p2Idx = self.contactJointsP2[i]
+            p3Idx = self.contactJointsP3[i]
+            # get toe position by contact handler
+            p0 = toCartesian(jointsPosition[p0Idx])
+            p0H = self.contactHandlers[i].handleContact(p0, contact[i])
 
-        links = self.file.getLinks(adjustedJointsPosition)
-        return (
-            frame,
-            [
-                (adjustedJointsPosition, (255, 255, 255)),
-                (np.array(highlight), (255, 0, 0)),
-            ],
-            [(links, (255, 255, 255))],
-        )
+            p1 = toCartesian(jointsPosition[p1Idx])
+            p1H = p1 + p0H - p0
+            p2 = toCartesian(jointsPosition[p2Idx])
+            p3 = toCartesian(jointsPosition[p3Idx])
 
-    # this functionw as made just to show how we pick contact position
-    def updateSceneWithContactTrajectory(self) -> sceneInput:
-        if self.dataFtn == None:
-            print("assign appropriate data function to run contact manager")
-            return (0, [], [])
+            d12 = np.linalg.norm(p2 - p1)
+            d23 = np.linalg.norm(p3 - p2)
+            d13 = np.linalg.norm(p3 - p1H)
+            # handle when contact point is further then leg lenth
+            eps = 1e-2
+            if d13 >= (d12 + d23) * (1 - eps):
+                p1H = p3 + (p1H - p3) / d13 * (d12 + d23) * (1 - eps)
+                p0H = p1H + p0 - p1
+                d13 = (d12 + d23) * (1 - eps)
 
-        frame, jointsPosition, contact = self.dataFtn()
-        adjustedJointsPosition = self.adjustJointsPosition(jointsPosition, contact)
-        jointsPosition = jointsPosition @ self.transformation.T
+            # for resulting p1H, p2H, p3,
+            # when we lay foot of perpendicular from p2H to p1H-p3,
+            # then distance from that point from p1H will be saved as d
+            d = (d13**2 - d23**2 + d12**2) / (2 * d13)
+            # put p2 into the plane with plane vector p3-p1 and p2Dirction
+            # we first move to appropriate point over p3-p1H
+            # then we move p2H along the plane
+            p2H = p1H + normalize(p3 - p1H) * d
+            # we take p2 Direciton this way:
+            p2Direction1 = orthogonalComponent(p3 - p1H, p2 - p3)
+            p2Direction2 = orthogonalComponent(p3 - p1H, p0 - p1)
+            p2Direction = p2Direction1 * 2 + p2Direction2
+            n = np.cross((p3 - p1H), p2Direction)
+            n = np.cross(n, (p3 - p1H))
+            n = normalize(n)
+            p2H = p2H + n * ((d12**2 - d**2) ** 0.5)
+            # ensure knee doesn't go back
+            originalCross = np.cross(p3 - p2, p2 - p1)
+            newCross = np.cross(p3 - p2H, p2H - p1H)
+            if np.dot(originalCross, newCross) < 0:
+                p2H = p2H - 2 * n * ((d12**2 - d**2) ** 0.5)
 
-        adjustedLinks = self.file.getLinks(adjustedJointsPosition)
-        links = self.file.getLinks(jointsPosition)
-        return (
-            frame,
-            [(adjustedJointsPosition, (255, 0, 0)), (jointsPosition, (255, 255, 255))],
-            [(adjustedLinks, (255, 0, 0)), (links, (255, 255, 255))],
-        )
+            # now we adjust rotation to be adjusted with the new position of p0, p1, p2
+            # p3's parent's global rotation
+            p3ParentGlobalRotation = np.array([1, 0, 0, 0])
+            Idx = p3Idx
+            while self.file.childToParentDict[Idx] >= 0:
+                Idx = self.file.childToParentDict[Idx]
+                p3ParentGlobalRotation = multQuat(
+                    quaternionData[Idx], p3ParentGlobalRotation
+                )
+            # adjust rotation of p3 to adjust p2 location
+            adjustedQuaternionData[p3Idx] = multQuat(
+                multQuat(
+                    invQuat(p3ParentGlobalRotation), vecToVecQuat(p2 - p3, p2H - p3)
+                ),
+                multQuat(p3ParentGlobalRotation, quaternionData[p3Idx]),
+            )
+            # p2's parent's global rotation after p3 adjustment
+            p2ParentGlobalRotation = multQuat(
+                p3ParentGlobalRotation, adjustedQuaternionData[p3Idx]
+            )
+            # calculate new position of p1 after adjusting p2
+            p1AfterP2Adjust = toCartesian(
+                self.file.calculateJointPositionFromQuaternionData(
+                    p1Idx, adjustedTranslationData, adjustedQuaternionData
+                )
+            )
+            # adjust rotation of p2 by new position of p1
+            adjustedQuaternionData[p2Idx] = multQuat(
+                multQuat(
+                    invQuat(p2ParentGlobalRotation),
+                    vecToVecQuat(p1AfterP2Adjust - p2H, p1H - p2H),
+                ),
+                multQuat(p2ParentGlobalRotation, quaternionData[p2Idx]),
+            )
+            # p1's parent's global rotation after p2 adjustment
+            p1ParentGlobalRotation = multQuat(
+                p2ParentGlobalRotation, adjustedQuaternionData[p2Idx]
+            )
+            # calculate new position of p0 after adjusting p1
+            p0AfterP1Adjust = toCartesian(
+                self.file.calculateJointPositionFromQuaternionData(
+                    p0Idx, adjustedTranslationData, adjustedQuaternionData
+                )
+            )
+            # adjust rotation of p1 by new position of p0
+            adjustedQuaternionData[p1Idx] = multQuat(
+                multQuat(
+                    invQuat(p1ParentGlobalRotation),
+                    vecToVecQuat(p0AfterP1Adjust - p1H, p0H - p1H),
+                ),
+                multQuat(p1ParentGlobalRotation, quaternionData[p1Idx]),
+            )
+        return adjustedTranslationData, adjustedQuaternionData
 
 
 class exampleDataFtn:
@@ -270,9 +271,7 @@ class exampleDataFtn:
         self.file: BVHFile = file
         self.contactVelocityThreshold = contactVelocityThreshold
 
-    def ftn(
-        self,
-    ) -> tuple[int, np.ndarray, np.ndarray]:
+    def ftn(self) -> tuple[int, contactManagerInput]:
         prevFrame = self.file.currentFrame
         self.file.currentFrame = (self.file.currentFrame + 1) % self.file.numFrames
         prevPosition = toCartesian(
@@ -286,19 +285,14 @@ class exampleDataFtn:
 
         translationData = (
             self.file.translationDatas[self.file.currentFrame]
-            + np.array([self.file.currentFrame * 2, 0, 0])
-            + (self.file.currentFrame > 45) * np.array([0, -0, 0])
+            + np.array([self.file.currentFrame * 0, 0, 0])
+            + (self.file.currentFrame > 45) * np.array([0, -30, 0])
         )
-        eulerData = self.file.eulerDatas[self.file.currentFrame]
-
-        jointsPosition = self.file.calculateJointsPositionFromData(
-            translationData, eulerData
-        )
+        quaternionData = eulersToQuats(self.file.eulerDatas[self.file.currentFrame])
 
         return (
             self.file.currentFrame,
-            jointsPosition,
-            speed < self.contactVelocityThreshold,
+            (translationData, quaternionData, speed < self.contactVelocityThreshold),
         )
 
 
@@ -306,17 +300,28 @@ if __name__ == "__main__":
     filePath = "example.bvh"
     file = BVHFile(filePath)
     scene = pygameScene(
-        filePath,
         frameTime=1 * file.frameTime,
-        cameraRotationQuat=np.array([1, 0, 0, 0]),
     )
-
     dataFtn = exampleDataFtn(file)
     manager = contactManager(file)
-    manager.setDataFtn(dataFtn.ftn)
-    scene.run(manager.updateSceneWithContactTrajectory)
 
-    dataFtn = exampleDataFtn(file)
-    manager = contactManager(file)
-    manager.setDataFtn(dataFtn.ftn)
-    scene.run(manager.updateScene)
+    while scene.running:
+        jointsPositions, linkss = [], []
+        frame, data = dataFtn.ftn()
+        translationData, quaternionData = manager.manageContact(data)
+        jointsPosition, links = file.calculateJointsPositionAndLinksFromQuaternionData(
+            translationData, quaternionData
+        )
+
+        jointsPositions.append((jointsPosition, (1.0, 0.5, 0.5)))
+        linkss.append((links, (0.5, 0.5, 1.0)))
+
+        originalJointsPosition, originalLinks = (
+            file.calculateJointsPositionAndLinksFromQuaternionData(
+                data[0] + manager.translation, data[1]
+            )
+        )
+        jointsPositions.append((originalJointsPosition, (1.0, 0.0, 0.0)))
+        linkss.append((originalLinks, (1.0, 0.0, 0.0)))
+
+        scene.updateScene((frame, jointsPositions, linkss))

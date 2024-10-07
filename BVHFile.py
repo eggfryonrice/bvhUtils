@@ -86,11 +86,6 @@ class BVHFile:
         self.eulerDatas[:, nonEndSiteIdx, :] = eulerDatas
         self.eulerDatas = self.eulerDatas * math.pi / 180
 
-        self.jointsPositions: np.ndarray = np.zeros((self.numFrames, self.numJoints, 4))
-        self.jointsPositionCalculated: list[bool] = [
-            False for _ in range(self.numFrames)
-        ]
-
     def getLinks(self, jointsPosition: np.ndarray) -> list[list[np.ndarray]]:
         links: list[list[np.ndarray]] = []
         for jointIdx in range(self.numJoints):
@@ -98,104 +93,6 @@ class BVHFile:
             if parentIdx >= 0:
                 links.append([jointsPosition[jointIdx], jointsPosition[parentIdx]])
         return links
-
-    # calcualte position of all joints using data of given frame
-    def calculateJointsPositionFromFrame(
-        self, frame: int, transformation: np.ndarray = np.eye(4)
-    ) -> np.ndarray:
-        if self.jointsPositionCalculated[frame]:
-            return self.jointsPositions[frame] @ transformation.T
-
-        translationData = self.translationDatas[frame]
-        eulerData = self.eulerDatas[frame]
-
-        jointsPosition = self.calculateJointsPositionFromData(
-            translationData, eulerData, np.eye(4)
-        )
-
-        self.jointsPositions[frame] = jointsPosition
-        self.jointsPositionCalculated[frame] = True
-
-        return jointsPosition @ transformation.T
-
-    def calculateJointPositionFromFrame(
-        self, jointIdx: int, frame: int, transformation: np.ndarray = np.eye(4)
-    ) -> np.ndarray:
-        rootToJoint: list[int] = [jointIdx]
-        while rootToJoint[-1] != 0:
-            rootToJoint.append(self.childToParentDict[rootToJoint[-1]])
-        rootToJoint.reverse()
-
-        translationData = self.translationDatas[frame]
-        eulerData = self.eulerDatas[frame]
-
-        rotations = eulersToMats(eulerData[rootToJoint], self.eulerOrder)
-
-        jointsTransformation = np.zeros((len(rootToJoint), 4, 4))
-        jointsTransformation[0] = translationMat(translationData)
-
-        for i in range(1, len(rootToJoint)):
-            jointsTransformation[i] = (
-                jointsTransformation[i - 1]
-                @ self.jointOffsetShifts[self.childToParentDict[rootToJoint[i]]]
-                @ rotations[i - 1]
-            )
-        jointPosition = jointsTransformation[-1] @ self.jointOffsets[jointIdx]
-
-        return transformation @ jointPosition
-
-    # calcualte position of all joints by given data
-    def calculateJointsPositionFromData(
-        self,
-        translationData: np.ndarray,
-        eulerData: np.ndarray,
-        transformation: np.ndarray = np.eye(4),
-    ) -> np.ndarray:
-        rotations = eulersToMats(eulerData, self.eulerOrder)
-
-        jointsTransformation = np.zeros((self.numJoints, 4, 4))
-        jointsTransformation[0] = translationMat(translationData)
-
-        for jointIdx in range(1, self.numJoints):
-            parentIdx = self.childToParentDict[jointIdx]
-            jointsTransformation[jointIdx] = (
-                jointsTransformation[parentIdx]
-                @ self.jointOffsetShifts[parentIdx]
-                @ rotations[parentIdx]
-            )
-        jointsPosition = np.einsum(
-            "ijk,ik->ij", jointsTransformation, self.jointOffsets
-        )
-
-        return jointsPosition @ transformation.T
-
-    # calculate position of given joint given datas
-    def calculateJointPositionFromData(
-        self,
-        jointIdx: int,
-        translationData: np.ndarray,
-        eulerData: np.ndarray,
-        transformation: np.ndarray = np.eye(4),
-    ) -> np.ndarray:
-        rootToJoint: list[int] = [jointIdx]
-        while rootToJoint[-1] != 0:
-            rootToJoint.append(self.childToParentDict[rootToJoint[-1]])
-        rootToJoint.reverse()
-
-        rotations = eulersToMats(eulerData[rootToJoint], self.eulerOrder)
-
-        jointsTransformation = np.zeros((len(rootToJoint), 4, 4))
-        jointsTransformation[0] = translationMat(translationData)
-
-        for i in range(1, len(rootToJoint)):
-            jointsTransformation[i] = (
-                jointsTransformation[i - 1]
-                @ self.jointOffsetShifts[self.childToParentDict[rootToJoint[i]]]
-                @ rotations[i - 1]
-            )
-        jointPosition = jointsTransformation[-1] @ self.jointOffsets[jointIdx]
-
-        return transformation @ jointPosition
 
     def calculateJointsPositionFromQuaternionData(
         self,
@@ -206,7 +103,7 @@ class BVHFile:
         rotations = quatsToMats(quaternionData)
 
         jointsTransformation = np.zeros((self.numJoints, 4, 4))
-        jointsTransformation[0] = translationMat(translationData)
+        jointsTransformation[0] = transformation @ translationMat(translationData)
 
         for jointIdx in range(1, self.numJoints):
             parentIdx = self.childToParentDict[jointIdx]
@@ -219,7 +116,7 @@ class BVHFile:
             "ijk,ik->ij", jointsTransformation, self.jointOffsets
         )
 
-        return jointsPosition @ transformation.T
+        return jointsPosition
 
     def calculateJointPositionFromQuaternionData(
         self,
@@ -236,7 +133,7 @@ class BVHFile:
         rotations = quatsToMats(quaternionData[rootToJoint])
 
         jointsTransformation = np.zeros((len(rootToJoint), 4, 4))
-        jointsTransformation[0] = translationMat(translationData)
+        jointsTransformation[0] = transformation @ translationMat(translationData)
 
         for i in range(1, len(rootToJoint)):
             jointsTransformation[i] = (
@@ -246,18 +143,125 @@ class BVHFile:
             )
         jointPosition = jointsTransformation[-1] @ self.jointOffsets[jointIdx]
 
-        return transformation @ jointPosition
+        return jointPosition
+
+    # calcualte position of all joints by given data
+    def calculateJointsPositionFromEulerData(
+        self,
+        translationData: np.ndarray,
+        eulerData: np.ndarray,
+        transformation: np.ndarray = np.eye(4),
+    ) -> np.ndarray:
+        quaternionData = eulersToQuats(eulerData, self.eulerOrder)
+        return self.calculateJointsPositionFromQuaternionData(
+            translationData, quaternionData, transformation
+        )
+
+    # calculate position of given joint given datas
+    def calculateJointPositionFromEulerData(
+        self,
+        jointIdx: int,
+        translationData: np.ndarray,
+        eulerData: np.ndarray,
+        transformation: np.ndarray = np.eye(4),
+    ) -> np.ndarray:
+        quaternionData = eulersToQuats(eulerData, self.eulerOrder)
+        return self.calculateJointPositionFromQuaternionData(
+            jointIdx, translationData, quaternionData, transformation
+        )
+
+    # calcualte position of all joints using data of given frame
+    def calculateJointsPositionFromFrame(
+        self, frame: int, transformation: np.ndarray = np.eye(4)
+    ) -> np.ndarray:
+        translationData = self.translationDatas[frame]
+        eulerData = self.eulerDatas[frame]
+        return self.calculateJointsPositionFromEulerData(
+            translationData, eulerData, transformation
+        )
+
+    def calculateJointPositionFromFrame(
+        self, jointIdx: int, frame: int, transformation: np.ndarray = np.eye(4)
+    ) -> np.ndarray:
+        translationData = self.translationDatas[frame]
+        eulerData = self.eulerDatas[frame]
+        return self.calculateJointPositionFromEulerData(
+            jointIdx, translationData, eulerData, transformation
+        )
+
+    def calculateJointsPositionAndLinksFromQuaternionData(
+        self,
+        translationData: np.ndarray,
+        quaternionData: np.ndarray,
+        transformation: np.ndarray = np.eye(4),
+    ) -> tuple[np.ndarray, list[tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+        rotations = quatsToMats(quaternionData)
+
+        jointsTransformation = np.zeros((self.numJoints, 4, 4))
+        jointsTransformation[0] = transformation @ translationMat(translationData)
+
+        for jointIdx in range(1, self.numJoints):
+            parentIdx = self.childToParentDict[jointIdx]
+            jointsTransformation[jointIdx] = (
+                jointsTransformation[parentIdx]
+                @ self.jointOffsetShifts[parentIdx]
+                @ rotations[parentIdx]
+            )
+        jointsPosition = toCartesian(
+            np.einsum("ijk,ik->ij", jointsTransformation, self.jointOffsets)
+        )
+
+        links = []
+        for jointIdx in range(1, self.numJoints):
+            parentIdx = self.childToParentDict[jointIdx]
+            if np.linalg.norm(toCartesian(self.jointOffsets[jointIdx])) <= 1e-3:
+                rotation = np.array([1, 0, 0, 0])
+            else:
+                # original link is standing parrallel to y axis
+                # rotate it directly to offset position
+                # and then apply rotation
+                rotation = multQuat(
+                    matToQuat(jointsTransformation[jointIdx]),
+                    vecToVecQuat(
+                        np.array([0, 1, 0]), toCartesian(self.jointOffsets[jointIdx])
+                    ),
+                )
+            links.append(
+                (jointsPosition[parentIdx], jointsPosition[jointIdx], rotation)
+            )
+
+        return jointsPosition, links
+
+    def calculateJointsPositionAndLinksFromEulerData(
+        self,
+        translationData: np.ndarray,
+        eulerData: np.ndarray,
+        transformation: np.ndarray = np.eye(4),
+    ) -> tuple[np.ndarray, list[tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+        quaternionData = eulersToQuats(eulerData, self.eulerOrder)
+        return self.calculateJointsPositionAndLinksFromQuaternionData(
+            translationData, quaternionData, transformation
+        )
+
+    def calculateJointsPositionAndLinksFromFrame(
+        self, frame: int, transformation: np.ndarray = np.eye(4)
+    ) -> tuple[np.ndarray, list[tuple[np.ndarray, np.ndarray, np.ndarray]]]:
+        translationData = self.translationDatas[frame]
+        eulerData = self.eulerDatas[frame]
+        return self.calculateJointsPositionAndLinksFromEulerData(
+            translationData, eulerData, transformation
+        )
 
     def getJointVelocity(self, idx: int, frame: int) -> float:
-        currJointPosition = self.calculateJointPositionFromData(
+        currJointPosition = self.calculateJointPositionFromEulerData(
             idx, self.translationDatas[frame], self.eulerDatas[frame]
         )
         if frame == 0:
-            compJointPosition = self.calculateJointPositionFromData(
+            compJointPosition = self.calculateJointPositionFromEulerData(
                 idx, self.translationDatas[1], self.eulerDatas[1]
             )
         else:
-            compJointPosition = self.calculateJointPositionFromData(
+            compJointPosition = self.calculateJointPositionFromEulerData(
                 idx, self.translationDatas[frame - 1], self.eulerDatas[frame - 1]
             )
         return float(
@@ -267,33 +271,16 @@ class BVHFile:
             / self.frameTime
         )
 
-    # return frame, joint, link information
-    def updateSceneWithNextFrame(self) -> sceneInput:
-        jointsPosition = self.calculateJointsPositionFromFrame(self.currentFrame)
-        links = self.getLinks(jointsPosition)
-        currentData = (
-            self.currentFrame,
-            [(jointsPosition, (255, 255, 255))],
-            [(links, (255, 255, 255))],
-        )
-        self.currentFrame = (self.currentFrame + 1) % self.numFrames
-        return currentData
-
-    def updateSceneWithDataFtn(
-        self, dataFtn: Callable[[], tuple[int, np.ndarray, np.ndarray]]
-    ) -> sceneInput:
-        frame, translationData, eulerData = dataFtn()
-        jointsPosition = self.calculateJointsPositionFromData(
-            translationData, eulerData
-        )
-
-        links = self.getLinks(jointsPosition)
-        return (frame, [(jointsPosition, (255, 255, 255))], [(links, (255, 255, 255))])
-
 
 if __name__ == "__main__":
     filePath = "example.bvh"
     file = BVHFile(filePath)
-    file.calculateJointsPositionFromFrame(0)
-    scene = pygameScene(filePath, frameTime=file.frameTime)
-    scene.run(file.updateSceneWithNextFrame)
+    scene = pygameScene(frameTime=file.frameTime)
+
+    frame = 0
+    while scene.running:
+        jointsPosition, links = file.calculateJointsPositionAndLinksFromFrame(frame)
+        scene.updateScene(
+            (frame, [(jointsPosition, (1.0, 0.5, 0.5))], [(links, (0.5, 0.5, 1.0))])
+        )
+        frame = (frame + 1) % file.numFrames

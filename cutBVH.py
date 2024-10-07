@@ -25,5 +25,11 @@ if __name__ == "__main__":
     newFilePath = "dancing_cut.bvh"
     cutBVH(originalFilePath, newFilePath, 6, 8)
     file = BVHFile(newFilePath)
-    scene = pygameScene(newFilePath, file.frameTime)
-    scene.run(file.updateSceneWithNextFrame)
+    scene = pygameScene(file.frameTime)
+    frame = 0
+    while scene.running:
+        jointsPosition, links = file.calculateJointsPositionAndLinksFromFrame(frame)
+        scene.updateScene(
+            (frame, [(jointsPosition, (1.0, 0.5, 0.5))], [(links, (0.5, 0.5, 1.0))])
+        )
+        frame = (frame + 1) % file.numFrames

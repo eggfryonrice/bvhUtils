@@ -1,141 +1,116 @@
 import pygame
+from pygame.locals import *
+from OpenGL.GL import *
+from OpenGL.GLUT import *
+from OpenGL.GLU import *
 import numpy as np
 import math
-import time
-import multiprocessing
-from multiprocessing import Process
-from queue import Queue
-from typing import Callable, TypeVar, Generic
 
-from transformationUtil import *
+# list of (ndarray of 3d points and color)
+jointsPositionsInput = list[tuple[np.ndarray, tuple[float, float, float]]]
+# list of (list of (fromPoint, toPoint, link rotation quaternion) and color)
+linkssInput = list[
+    tuple[
+        list[tuple[np.ndarray, np.ndarray, np.ndarray]],
+        tuple[float, float, float],
+    ]
+]
 
-T = TypeVar("T")
-
-
-class MPQueue(Generic[T]):
-    def __init__(self):
-        self.queue = multiprocessing.Queue()
-        self.size = multiprocessing.Value("i", 0)
-
-    def put(self, item: T) -> None:
-        self.queue.put(item)
-        with self.size.get_lock():
-            self.size.value += 1
-
-    def get(self) -> T:
-        item = self.queue.get()
-        with self.size.get_lock():
-            self.size.value -= 1
-        return item
-
-    def qsize(self) -> int:
-        return self.size.value
-
-    def empty(self) -> bool:
-        return self.qsize() == 0
-
-    def clear(self) -> None:
-        while self.qsize() > 0:
-            self.get()
-
-
-# scene input are frame int, list of joints coupled with its color, list of links coupled with its color
-# frame, jointsPositions, linkss
 sceneInput = tuple[
     int,
-    list[tuple[np.ndarray, tuple[int, int, int]]],
-    list[tuple[list[list[np.ndarray]], tuple[int, int, int]]],
+    jointsPositionsInput,
+    linkssInput,
 ]
 
 
 class pygameScene:
     def __init__(
         self,
-        caption: str = "",
-        frameTime: float = 1 / 60,
-        cameraRotationQuat: np.ndarray = np.array([1, 0, 0, 0]),
-        width: int = 1600,
-        height: int = 1200,
+        frameTime: float = 0.033,
+        cameraAngleX=math.pi / 4,
+        cameraAngleY=-math.pi / 2,
+        width=2560,
+        height=1600,
+        sphereRadius=4,
+        cuboidWidth=5,
     ):
-        self.running = multiprocessing.Value("i", True)
+        pygame.init()
+        self.running = True
 
-        self.caption: str = caption
-        self.width: int = width
-        self.height: int = height
+        self.screen = pygame.display.set_mode((width, height), DOUBLEBUF | OPENGL)
+        self.width = width
+        self.height = height
 
-        # get info from reader to get cameracenter and floor position
+        self.clock = pygame.time.Clock()
+        self.frameTime = frameTime
+
+        glutInit()
+        self.initOpengl()
+        self.initLighting()
+        self.lightPosition = [0, 1000, 0, 0]
+
+        self.sphereRadius = sphereRadius
+        self.cuboidWidth = cuboidWidth
+
+        # Camera parameters
         self.cameraCenter: np.ndarray = np.array([0, 0, 0])
+        # cameracenter will be initialized by first data
+        self.cameraCenterInitializedByFirstData = False
+        self.cameraAngleX = cameraAngleX
+        self.cameraAngleY = cameraAngleY
+        self.cameraDistance = 1000
 
-        # camera transformation info
-        self.cameraDistance: int = 2000
-        self.cameraRotationQuat: np.ndarray = cameraRotationQuat
-        self.zoom: float = 2
-
-        # input info for camera transformation
         self.mouseDragging: bool = False
         self.prevMousePosition: tuple[int, int] = (0, 0)
-        self.prevRotationQuat: np.ndarray = self.cameraRotationQuat
 
-        self.frameTime: float = frameTime
+    def initOpengl(self):
+        glEnable(GL_DEPTH_TEST)
+        glMatrixMode(GL_PROJECTION)
+        gluPerspective(45, (self.width / self.height), 0.1, 5000.0)
+        glMatrixMode(GL_MODELVIEW)
+        glLoadIdentity()
 
-    # setup non-serializable data (pygame attributes) later for multiprocessing
-    def setupPygame(self) -> None:
-        pygame.init()
-        self.screen = pygame.display.set_mode((self.width, self.height))
-        pygame.display.set_caption(self.caption)
-        self.clock = pygame.time.Clock()
+    def initLighting(self):
+        glEnable(GL_LIGHTING)
+        glEnable(GL_LIGHT0)
 
-    def updateCameraCenter(
-        self, jointsPosition: list[tuple[np.ndarray, tuple[int, int, int]]]
-    ) -> None:
-        if len(jointsPosition) == 0:
+        # Define light properties
+        light_ambient = [0.2, 0.2, 0.2, 1.0]
+        light_diffuse = [0.8, 0.8, 0.8, 1.0]
+        light_specular = [1.0, 1.0, 1.0, 1.0]
+
+        glLightfv(GL_LIGHT0, GL_AMBIENT, light_ambient)
+        glLightfv(GL_LIGHT0, GL_DIFFUSE, light_diffuse)
+        glLightfv(GL_LIGHT0, GL_SPECULAR, light_specular)
+
+        glEnable(GL_COLOR_MATERIAL)
+        glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
+
+        material_specular = [0.1, 0.1, 0.1, 1.0]
+        material_shininess = [10.0]
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, material_specular)
+        glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, material_shininess)
+
+    def initCameraCenter(self, jointsPositions: jointsPositionsInput):
+        if len(jointsPositions) == 0:
             return
-        self.cameraCenter = jointsPosition[0][0][0, 0:3] / jointsPosition[0][0][0, 3]
-        jointsHeight = jointsPosition[0][0][:, 1] / jointsPosition[0][0][:, 3]
-        self.cameraCenter[1] = np.min(jointsHeight)
+        self.cameraCenter = jointsPositions[0][0][0]
+        for jointsPosition, _ in jointsPositions:
+            for jointPosition in jointsPosition:
+                if self.cameraCenter[1] > jointPosition[1]:
+                    self.cameraCenter[1] = jointPosition[1]
+        self.cameraCenterInitializedByFirstData = True
 
-    # get projected location on the screen of 4d point
-    def projection(self, points: np.ndarray) -> np.ndarray:
-        cameraDistance = self.cameraDistance
-        zoom = self.zoom
-        rotation = quatToMat(self.cameraRotationQuat)
-
-        singlePoint = False
-        if points.ndim == 1 and points.shape == (4,):
-            points = points.reshape(1, 4)
-            singlePoint = True
-
-        cameraCenterBroadCast = self.cameraCenter.reshape(1, 3)
-        cartesianPoints = toProjective(toCartesian(points) - cameraCenterBroadCast)
-
-        rotatedPoints = toCartesian(
-            np.einsum("ij,...j->...i", rotation, cartesianPoints)
-        )
-
-        factor = cameraDistance / (cameraDistance + rotatedPoints[..., 2])
-
-        x2d = rotatedPoints[..., 0] * factor * zoom + self.screen.get_rect()[2] // 2
-        y2d = -rotatedPoints[..., 1] * factor * zoom + self.screen.get_rect()[3] // 2
-
-        result = np.stack((x2d, y2d), axis=-1)
-
-        if singlePoint:
-            return result[0]
-
-        return result.astype(np.int32)
-
-    # handle input such as pushing x button, mouse motion, left button, and scroll
-    def handleInput(self) -> None:
+    def handleInput(self):
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
-                with self.running.get_lock():
-                    self.running.value = False
+                self.running = False
+                pygame.quit()
 
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     if not self.mouseDragging:
                         self.prevMousePosition = pygame.mouse.get_pos()
-                        self.prevRotationQuat = self.cameraRotationQuat.copy()
                     self.mouseDragging = True
 
             elif event.type == pygame.MOUSEBUTTONUP:
@@ -143,208 +118,199 @@ class pygameScene:
                     self.mouseDragging = False
 
             elif event.type == pygame.MOUSEMOTION:
-                # mouse motion  contribute to rotation of camera
-                # if mouse move from one side from the other side of the screen,
-                # camera rotates for pi in the oppposite direction
                 if self.mouseDragging:
                     mouseX, mouseY = pygame.mouse.get_pos()
-                    dx = self.prevMousePosition[0] - mouseX
-                    dy = self.prevMousePosition[1] - mouseY
-
-                    cameraX = np.array([1, 0, 0])
-                    cameraY = np.array([0, 1, 0])
-                    self.cameraRotationQuat = multQuat(
-                        multQuat(
-                            axisAngleToQuat(
-                                cameraY, dx * math.pi / self.screen.get_rect()[2]
-                            ),
-                            axisAngleToQuat(
-                                cameraX, dy * math.pi / self.screen.get_rect()[3]
-                            ),
-                        ),
-                        self.prevRotationQuat,
+                    xrot = (mouseY - self.prevMousePosition[1]) * math.pi / self.height
+                    yrot = (mouseX - self.prevMousePosition[0]) * math.pi / self.width
+                    self.cameraAngleX = max(
+                        -math.pi / 2, min(math.pi / 2, self.cameraAngleX + xrot)
                     )
+                    self.cameraAngleY = self.cameraAngleY + yrot
+
                     self.prevMousePosition = (mouseX, mouseY)
-                    self.prevRotationQuat = self.cameraRotationQuat
 
-            # mouse wheeel contribute to zoom in and zoom out
             elif event.type == pygame.MOUSEWHEEL:
-                self.zoom += event.y * 0.1
-                if self.zoom < 0.1:
-                    self.zoom = 0.1
+                self.cameraDistance += event.y * 30
+                if self.cameraDistance < 20:
+                    self.cameraDistance = 20
 
-    # draw homogeneous point
-    def drawHomogeneousPoint(
-        self,
-        point: np.ndarray,
-        color: tuple[int, int, int] = (255, 255, 255),
-        size: int = 4,
-    ) -> None:
-        pygame.draw.circle(self.screen, color, tuple(self.projection(point)), size)
+        glLoadIdentity()
 
-    # draw homogeneous points, gets n * 4 np array of positions as input
-    def drawHomogeneousPoints(
-        self,
-        pointsPosition: np.ndarray,
-        color: tuple[int, int, int] = (255, 255, 255),
-        size: int = 4,
-    ) -> None:
-        if pointsPosition.size == 0:
-            return
-        pointsPosition2D = self.projection(pointsPosition)
-        for i in range(pointsPosition.shape[0]):
-            pygame.draw.circle(self.screen, color, pointsPosition2D[i], size)
+        # rotate camera along x axis first, and then along y axis
+        cameraY = self.cameraDistance * math.sin(self.cameraAngleX)
+        cameraX = (
+            self.cameraDistance
+            * math.cos(self.cameraAngleX)
+            * math.cos(self.cameraAngleY)
+        )
+        cameraZ = (
+            self.cameraDistance
+            * math.cos(self.cameraAngleX)
+            * math.sin(self.cameraAngleY)
+        )
+        cx, cy, cz = self.cameraCenter
+        gluLookAt(cx + cameraX, cy + cameraY, cz + cameraZ, cx, cy, cz, 0, 1, 0)
 
-    # draw line through series of homogeneous points
-    def drawLineFromHomogenousPoints(
-        self,
-        points: list[np.ndarray],
-        color: tuple[int, int, int] = (255, 255, 255),
-        width: int = 2,
-    ) -> None:
-        if len(points) <= 1:
-            return
-        fromPt = self.projection(points[0])
-        for i in range(1, len(points)):
-            toPt = self.projection(points[i])
-            pygame.draw.line(self.screen, color, tuple(fromPt), tuple(toPt), width)
-            fromPt = toPt
+        glLightfv(GL_LIGHT0, GL_POSITION, self.lightPosition)
 
-    # draw floor on the same height as cameracenter
-    # grid is number of grid generated, gridDistance is distance between grids
-    def drawFloor(
-        self,
-        color: tuple[int, int, int] = (100, 100, 100),
-        grid: int = 21,
-        gridDistance: int = 50,
-    ) -> None:
-        centerX = self.cameraCenter[0]
-        centerZ = self.cameraCenter[2]
+    def drawSphere(self, position, color=(0.5, 0.5, 1.0)):
+        glPushMatrix()
+        glTranslatef(position[0], position[1], position[2])
+        glColor3f(color[0], color[1], color[2])
+        glutSolidSphere(self.sphereRadius, 20, 20)
+        glPopMatrix()
 
-        floorPoints = []
-        for i in range(-1 * (grid // 2), grid // 2 + grid % 2):
-            for j in range(-1 * (grid // 2), grid // 2 + grid % 2):
-                pt4D = np.array(
-                    [
-                        centerX + i * gridDistance,
-                        self.cameraCenter[1],
-                        centerZ + j * gridDistance,
-                        1,
-                    ]
-                )
-                floorPoints.append(pt4D)
-        floorPoints2D = self.projection(np.array(floorPoints))
+    def drawCuboid(self, start_pos, end_pos, rotationQuat, color=(1.0, 0.5, 0.5)):
+        glPushMatrix()
 
-        floorLines = []
-        for i in range(grid * grid - grid):
-            floorLines.append((i, i + grid))
-        for i in range(grid * grid):
-            if i % grid != grid - 1:
-                floorLines.append((i, i + 1))
+        mid_point = (start_pos + end_pos) / 2
+        direction = end_pos - start_pos
+        length = max(np.linalg.norm(direction) - 2 * self.sphereRadius, 0)
 
-        for i, j in floorLines:
-            pygame.draw.aaline(
-                self.screen, color, tuple(floorPoints2D[i]), tuple(floorPoints2D[j])
-            )
+        glTranslatef(mid_point[0], mid_point[1], mid_point[2])
+
+        angle = 2 * np.arccos(rotationQuat[0])
+        axis = rotationQuat[1:]
+        if np.linalg.norm(axis) > 1e-3:
+            glRotatef(angle * 180 / math.pi, axis[0], axis[1], axis[2])
+
+        glScalef(self.cuboidWidth, length, self.cuboidWidth)
+
+        glColor3f(color[0], color[1], color[2])
+
+        # Draw the cuboid with normals
+        vertices = self.cube_faces()
+        normals = self.cube_normals()
+
+        glBegin(GL_QUADS)
+        for i, face in enumerate(vertices):
+            glNormal3fv(normals[i])  # Set the normal for each face
+            for vertex in face:
+                glVertex3fv(vertex)
+        glEnd()
+
+        glPopMatrix()
+
+    def cube_faces(self):
+        vertices = [
+            [0.5, -0.5, -0.5],  # Front bottom right
+            [0.5, 0.5, -0.5],  # Front top right
+            [-0.5, 0.5, -0.5],  # Front top left
+            [-0.5, -0.5, -0.5],  # Front bottom left
+            [0.5, -0.5, 0.5],  # Back bottom right
+            [0.5, 0.5, 0.5],  # Back top right
+            [-0.5, -0.5, 0.5],  # Back bottom left
+            [-0.5, 0.5, 0.5],  # Back top left
+        ]
+
+        faces = [
+            [vertices[0], vertices[1], vertices[2], vertices[3]],  # Front face
+            [vertices[5], vertices[4], vertices[6], vertices[7]],  # Back face
+            [vertices[3], vertices[2], vertices[7], vertices[6]],  # Left face
+            [vertices[1], vertices[0], vertices[4], vertices[5]],  # Right face
+            [vertices[2], vertices[1], vertices[5], vertices[7]],  # Top face
+            [vertices[0], vertices[3], vertices[6], vertices[4]],  # Bottom face
+        ]
+        return faces
+
+    def cube_normals(self):
+        normals = [
+            [0, 0, -1],  # Front face normal
+            [0, 0, 1],  # Back face normal
+            [-1, 0, 0],  # Left face normal
+            [1, 0, 0],  # Right face normal
+            [0, 1, 0],  # Top face normal
+            [0, -1, 0],  # Bottom face normal
+        ]
+        return normals
+
+    def drawChessBoard(self, numGrid: int = 14, blockSize: float = 50):
+        # floor is located at cameracenterheight - joint radius
+        height = self.cameraCenter[1] - self.sphereRadius
+
+        glPushMatrix()
+
+        halfSize = (numGrid * blockSize) / 2
+
+        for i in range(numGrid):
+            for j in range(numGrid):
+                x = -halfSize + i * blockSize + self.cameraCenter[0]
+                z = -halfSize + j * blockSize + self.cameraCenter[2]
+
+                if (i + j) % 2 == 0:
+                    glColor3f(0.9, 0.9, 0.9)
+                else:
+                    glColor3f(0.1, 0.1, 0.1)
+
+                glBegin(GL_QUADS)
+                glVertex3f(x, height, z)
+                glVertex3f(x + blockSize, height, z)
+                glVertex3f(x + blockSize, height, z + blockSize)
+                glVertex3f(x, height, z + blockSize)
+                glEnd()
+
+        glPopMatrix()
 
     # draw elapsed time on top right
     def drawElapsedTimeAndFrame(self, frame: int) -> None:
-        font = pygame.font.Font(None, 36)
+        font = pygame.font.Font(None, 50)
         elapsedSurface = font.render(
             f"Time: {frame * self.frameTime:.2f}s, Frame: {frame}",
             True,
             (255, 255, 255),
-        )
-        elapsedRect = elapsedSurface.get_rect(
-            topright=(self.screen.get_rect().width - 10, 10)
-        )
-        self.screen.blit(elapsedSurface, elapsedRect)
-
-    def drawPendingIcon(self, radius: float = 50, frequency: float = 0.5) -> None:
-        center = (self.screen.get_rect().width / 2, self.screen.get_rect().height / 2)
-        pygame.draw.circle(self.screen, (255, 255, 255), center, radius, 2)
-        angle = pygame.time.get_ticks() * frequency / 1000 * 360
-        x = center[0] + radius * math.cos(math.radians(angle))
-        y = center[1] + radius * math.sin(math.radians(angle))
-        pygame.draw.line(self.screen, (255, 255, 255), center, (x, y), 3)
-
-    # display scene
-    # element of Queue is tuple of int, list of points, and list of lines to be drawn
-    def displayScene(
-        self,
-        queue: Queue[sceneInput],
-    ) -> None:
-        self.setupPygame()
-        while self.running.value and queue.empty():
-            self.clock.tick(1 / self.frameTime)
-        frame, jointsPositions, linkss = queue.get()
-
-        # adjust camera center with respect to first joints information
-        self.updateCameraCenter(jointsPositions)
-
-        while self.running.value:
-            self.handleInput()
-            self.screen.fill((0, 0, 0))
-            self.drawFloor()
-
-            for jointsPosition, color in jointsPositions:
-                self.drawHomogeneousPoints(jointsPosition, color)
-            for links, color in linkss:
-                for link in links:
-                    self.drawLineFromHomogenousPoints(link, color)
-
-            self.drawElapsedTimeAndFrame(frame)
-
-            if not queue.empty():
-                frame, jointsPositions, linkss = queue.get()
-            else:
-                self.drawPendingIcon()
-
-            pygame.display.flip()
-            self.clock.tick(1 / self.frameTime)
-        pygame.quit()
-
-    def enqueueData(
-        self,
-        queue: MPQueue[sceneInput],
-        f: Callable[
-            [],
-            sceneInput,
-        ],
-    ) -> None:
-        while self.running.value:
-            if queue.qsize() > 5 / self.frameTime:
-                time.sleep(0.5)
-            else:
-                queue.put(f())
-
-        queue.clear()
-
-    def run(self, f: Callable[[], sceneInput]):
-        queue = MPQueue()
-
-        p1 = Process(target=self.displayScene, args=(queue,))
-        p1.start()
-
-        p2 = Process(target=self.enqueueData, args=(queue, f))
-        p2.start()
-
-        p1.join()
-        p2.join()
-
-        self.__init__(
-            caption=self.caption,
-            frameTime=self.frameTime,
-            cameraRotationQuat=self.cameraRotationQuat,
-            width=self.width,
-            height=self.height,
+            (0, 0, 0),
         )
 
+        text_data = pygame.image.tostring(elapsedSurface, "RGBA", True)
+        width, height = elapsedSurface.get_size()
 
-def exampleFunction() -> sceneInput:
-    return (0, [(np.array([[0, 0, 0, 1]]), (255, 0, 0))], [])
+        glMatrixMode(GL_PROJECTION)
+        glPushMatrix()
+        glLoadIdentity()
+        gluOrtho2D(0, self.width, 0, self.height)
+        glMatrixMode(GL_MODELVIEW)
+        glPushMatrix()
+        glLoadIdentity()
+
+        glRasterPos2d(self.width - width - 10, self.height - 50)
+        glDrawPixels(width, height, GL_RGBA, GL_UNSIGNED_BYTE, text_data)
+
+        glPopMatrix()
+        glMatrixMode(GL_PROJECTION)
+        glPopMatrix()
+        glMatrixMode(GL_MODELVIEW)
+
+    def updateScene(self, objects: sceneInput):
+        frame, jointsPositions, linkss = objects
+
+        if not self.cameraCenterInitializedByFirstData:
+            self.initCameraCenter(jointsPositions)
+
+        self.handleInput()
+
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)  # type: ignore
+
+        if not self.running:
+            return
+
+        self.drawChessBoard()
+
+        for jointsPosition, color in jointsPositions:
+            for jointPosition in jointsPosition:
+                self.drawSphere(jointPosition, color=color)
+
+        for links, color in linkss:
+            for link in links:
+                self.drawCuboid(link[0], link[1], link[2], color=color)
+
+        self.drawElapsedTimeAndFrame(frame)
+
+        pygame.display.flip()
+
+        self.clock.tick(1 / self.frameTime)
 
 
 if __name__ == "__main__":
-    scene = pygameScene("example scene")
-    scene.run(exampleFunction)
+    scene = pygameScene()
+    while scene.running:
+        scene.updateScene((0, [(np.array([[0, 0, 0], [0, 0, 50]]), (1, 0.5, 0.5))], []))
