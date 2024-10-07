@@ -263,6 +263,9 @@ class contactManager:
                 ),
                 multQuat(p1ParentGlobalRotation, quaternionData[p1Idx]),
             )
+
+            # we should adjust rotation of p0 in the future when offset lengfth is not zero
+            # maybe next time....
         return adjustedTranslationData, adjustedQuaternionData
 
 
