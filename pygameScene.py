@@ -29,8 +29,8 @@ class pygameScene:
         frameTime: float = 0.033,
         cameraAngleX: float = math.pi / 4,
         cameraAngleY: float = -math.pi / 2,
-        width: int = 1600,
-        height: int = 900,
+        width: int = 2780,
+        height: int = 1600,
         sphereRadius: float = 3,
         cuboidWidth: float = 4,
     ):

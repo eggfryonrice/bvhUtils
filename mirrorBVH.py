@@ -70,8 +70,8 @@ def mirrorBVH(filePath, newFilePath):
 
 
 if __name__ == "__main__":
-    originalFilePath = "right.bvh"
-    mirroredFilePath = "left.bvh"
+    originalFilePath = "example.bvh"
+    mirroredFilePath = "example_cut.bvh"
     mirrorBVH(originalFilePath, mirroredFilePath)
     originalFile = BVHFile(originalFilePath)
     mirroredFile = BVHFile(mirroredFilePath)
